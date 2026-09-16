@@ -1,0 +1,21 @@
+.container {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--space-5);
+}
+
+.sm {
+  max-width: var(--content-width-sm);
+}
+
+.md {
+  max-width: var(--content-width-md);
+}
+
+.lg {
+  max-width: var(--content-width-lg);
+}
+
+.xl {
+  max-width: var(--content-width-xl);
+}

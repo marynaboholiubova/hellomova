@@ -1,0 +1,74 @@
+/**
+ * Design tokens — approximate direction only. Values are meant to be
+ * adjusted to match Figma exactly; keep the token names stable so
+ * components don't need to change when the values do.
+ *
+ * Reference layout widths (not hardcoded breakpoints): mobile 390px,
+ * tablet 834px, desktop 1440px.
+ */
+:root {
+  /* Color: surfaces & text */
+  --color-bg: #f7f8fc;
+  --color-surface: #ffffff;
+  --color-border: #e3e6ee;
+  --color-text-primary: #14162e;
+  --color-text-secondary: #5b5f78;
+  --color-text-inverse: #ffffff;
+
+  /* Color: brand — matched to design-references/onboarding (indigo, not violet) */
+  --color-accent-primary: #4f46e5;
+  --color-accent-primary-hover: #4338ca;
+  --color-accent-primary-tint: #ecebfc;
+  --color-accent-secondary: #3b82f6;
+  --color-success: #16a34a;
+  --color-danger: #dc2626;
+
+  /* Color: dark navigation surfaces */
+  --color-nav-bg: #14162e;
+  --color-nav-text: #e7e8f5;
+  --color-nav-text-muted: #9497b8;
+  --color-nav-active: #4f46e5;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(20, 22, 46, 0.06);
+  --shadow-md: 0 4px 16px rgba(20, 22, 46, 0.08);
+  --shadow-lg: 0 12px 32px rgba(20, 22, 46, 0.12);
+
+  /* Content widths */
+  --content-width-sm: 480px;
+  --content-width-md: 834px;
+  --content-width-lg: 1200px;
+  --content-width-xl: 1440px;
+
+  /* Typography */
+  --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.75rem;
+  --font-size-2xl: 2.25rem;
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+
+  /* Layout primitives */
+  --nav-sidebar-width: 240px;
+  --nav-sidebar-width-rail: 76px;
+  --nav-bottom-height: 64px;
+}

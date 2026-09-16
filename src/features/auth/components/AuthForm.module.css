@@ -1,0 +1,21 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.formMessage {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+}
+
+.altAction {
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.altAction a {
+  color: var(--color-accent-primary);
+  font-weight: 600;
+}

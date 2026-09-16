@@ -1,0 +1,87 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: var(--content-width-lg);
+}
+
+.heading {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+}
+
+.tag {
+  color: var(--color-accent-primary);
+  font-weight: 600;
+  margin-top: var(--space-1);
+}
+
+.lessonCard {
+  background: var(--color-accent-primary-tint);
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lessonLabel {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent-primary);
+}
+
+.lessonHeading {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.lessonMeta {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHeading {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+}
+
+.tileRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.soonTag {
+  align-self: flex-start;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+}
+
+.mutedText {
+  color: var(--color-text-secondary);
+}

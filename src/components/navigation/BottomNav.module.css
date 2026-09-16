@@ -1,0 +1,31 @@
+.bottomNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-bottom-height);
+  background: var(--color-nav-bg);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 10;
+}
+
+/* Tablet and up: the sidebar takes over navigation */
+@media (min-width: 834px) {
+  .bottomNav {
+    display: none;
+  }
+}
+
+.navItem {
+  color: var(--color-nav-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.navItem:hover {
+  color: var(--color-nav-text);
+}

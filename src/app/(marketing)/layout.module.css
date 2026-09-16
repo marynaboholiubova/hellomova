@@ -1,0 +1,48 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+}
+
+.header {
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.headerInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+}
+
+.brand {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  font-weight: 500;
+}
+
+.ctaLink {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-primary);
+  color: var(--color-text-inverse);
+}
+
+.main {
+  flex: 1;
+}
+
+.footer {
+  padding: var(--space-6) 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
