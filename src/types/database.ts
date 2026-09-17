@@ -100,6 +100,73 @@ export type Database = {
         };
         Relationships: [];
       };
+      lesson_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          native_language_code: string;
+          cefr_level: string | null;
+          learning_goal: string;
+          teacher_id: string;
+          mode: string;
+          status: string;
+          prompt_version: string;
+          summary: unknown | null;
+          started_at: string;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          native_language_code: string;
+          cefr_level?: string | null;
+          learning_goal: string;
+          teacher_id: string;
+          mode?: string;
+          status?: string;
+          prompt_version: string;
+          summary?: unknown | null;
+          started_at?: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          status?: string;
+          summary?: unknown | null;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      lesson_messages: {
+        Row: {
+          id: string;
+          lesson_session_id: string;
+          user_id: string;
+          role: string;
+          content: string;
+          metadata: unknown | null;
+          client_turn_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          lesson_session_id: string;
+          user_id: string;
+          role: string;
+          content: string;
+          metadata?: unknown | null;
+          client_turn_id?: string | null;
+        };
+        // Immutable record — no code path updates a lesson message.
+        Update: {
+          content?: string;
+          metadata?: unknown | null;
+        };
+        Relationships: [];
+      };
     };
   };
 };

@@ -1,0 +1,39 @@
+.teacherRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 85%;
+}
+
+.learnerRow {
+  display: flex;
+  justify-content: flex-end;
+  max-width: 85%;
+  margin-left: auto;
+}
+
+.teacherBubble {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.learnerBubble {
+  background: var(--color-accent-primary);
+  color: var(--color-text-inverse);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.sender {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--color-accent-primary);
+  margin-bottom: var(--space-1);
+}
+
+.content {
+  white-space: pre-wrap;
+}

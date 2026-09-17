@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { StartLessonButton } from "@/features/lessons/components/StartLessonButton";
 import styles from "./DashboardHome.module.css";
 
 export interface DashboardHomeProps {
@@ -9,6 +11,8 @@ export interface DashboardHomeProps {
   cefrLevel: string | null;
   goalLabel: string | null;
   teacherName: string | null;
+  canStartLesson: boolean;
+  activeLessonSessionId: string | null;
 }
 
 const QUICK_PRACTICE_TILES = ["Talk with AI", "Pronunciation", "Role Play"];
@@ -33,6 +37,8 @@ export function DashboardHome({
   cefrLevel,
   goalLabel,
   teacherName,
+  canStartLesson,
+  activeLessonSessionId,
 }: DashboardHomeProps) {
   const friendlyName = getFriendlyName(displayName, email);
   const greeting = friendlyName ? `${getGreeting()}, ${friendlyName}` : `${getGreeting()}!`;
@@ -50,7 +56,13 @@ export function DashboardHome({
 
       <Card className={styles.lessonCard}>
         <p className={styles.lessonLabel}>Today&apos;s lesson</p>
-        <h2 className={styles.lessonHeading}>Lessons are coming soon</h2>
+        <h2 className={styles.lessonHeading}>
+          {activeLessonSessionId
+            ? "You have a lesson in progress"
+            : canStartLesson
+              ? "Ready for a lesson?"
+              : "Choose a target language to start"}
+        </h2>
         {(teacherName || goalLabel) && (
           <p className={styles.lessonMeta}>
             {teacherName && `Your teacher: ${teacherName}`}
@@ -58,9 +70,17 @@ export function DashboardHome({
             {goalLabel && `Goal: ${goalLabel}`}
           </p>
         )}
-        <Button disabled fullWidth>
-          Coming soon
-        </Button>
+        {activeLessonSessionId ? (
+          <Link href={`/dashboard/lessons/${activeLessonSessionId}`}>
+            <Button fullWidth>Continue lesson</Button>
+          </Link>
+        ) : canStartLesson ? (
+          <StartLessonButton />
+        ) : (
+          <Button disabled fullWidth>
+            No target language yet
+          </Button>
+        )}
       </Card>
 
       <section className={styles.section}>

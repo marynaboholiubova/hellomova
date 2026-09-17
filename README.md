@@ -1,10 +1,11 @@
 # HelloMova
 
 HelloMova is a premium AI language-learning platform. This repository is
-currently at **Phase 2: Onboarding**, on top of the Phase 1 security/auth/
-database foundation. The AI lesson engine, voice, pronunciation coaching,
-Language Brain, Business Course, career tools, billing, and multilingual
-content are **not** built yet; they are future phases.
+currently at **Phase 3: AI Lesson Engine**, on top of Phase 1 (security/
+auth/database foundation) and Phase 2 (onboarding). Voice, pronunciation
+coaching, Language Brain (cross-session memory/adaptation), Business
+Course, career tools, billing, and the full multilingual content set are
+**not** built yet; they are future phases.
 
 > The onboarding screens have had a visual pass matching
 > `design-references/onboarding/` (colors, spacing, hierarchy) — but only
@@ -23,6 +24,8 @@ content are **not** built yet; they are future phases.
 - [Supabase](https://supabase.com) for authentication and Postgres,
   accessed via `@supabase/ssr`.
 - [Zod](https://zod.dev) for server-side input validation.
+- [OpenAI](https://platform.openai.com) for the AI lesson engine, behind
+  a small provider interface (`src/lib/ai/provider.ts`).
 
 > Note: this Next.js version renamed `middleware.ts` to `proxy.ts` (see
 > `src/proxy.ts`) and changed some other App Router conventions. See
@@ -46,9 +49,22 @@ Copy `.env.example` to `.env.local` (already git-ignored) and fill in:
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — your Supabase publishable key.
 
 Both are safe to expose to the browser: access is enforced by Postgres Row
-Level Security, not by keeping these secret. **Never** add the Supabase
-service-role key to this project's environment files or to any
-`NEXT_PUBLIC_`-prefixed variable.
+Level Security, not by keeping these secret.
+
+- `OPENAI_API_KEY` — **server-only**, required for the AI lesson engine
+  to actually generate lessons. If it's unset, the app does not fake a
+  response: lesson start/continue will honestly fail with a
+  configuration/service error until you set it. Never prefix this with
+  `NEXT_PUBLIC_`.
+- `OPENAI_MODEL` — optional, defaults to `gpt-4o-mini`.
+- `SUPABASE_SERVICE_ROLE_KEY` — **server-only, bypasses Row Level
+  Security.** Required for the AI lesson engine's writes (see "AI lesson
+  engine" below for why a service-role key is genuinely necessary there,
+  not a convenience shortcut). From Supabase Project Settings → API →
+  `service_role`. **Never** prefix this with `NEXT_PUBLIC_`, never send
+  it to the browser, and never reuse it outside
+  `src/lib/supabase/serviceRole.ts` without redoing the security review
+  in `AGENTS.md`'s "AI lesson engine" section.
 
 ## Supabase setup (manual steps)
 
@@ -56,12 +72,20 @@ service-role key to this project's environment files or to any
 2. Copy its Project URL and publishable key into `.env.local`.
 3. Run the SQL in `supabase/migrations/0001_init.sql`, then
    `0002_onboarding.sql`, then `0003_placement_category_breakdown.sql`,
-   then `0004_placement_test_version.sql`, against your project **in
-   that order** — either paste them into the Supabase SQL editor, or
-   apply them with the Supabase CLI (`supabase db push`) if you use one.
+   then `0004_placement_test_version.sql`, then
+   `0005_ai_lesson_engine.sql`, against your project **in that order** —
+   either paste them into the Supabase SQL editor, or apply them with the
+   Supabase CLI (`supabase db push`) if you use one. **This repository
+   does not apply migrations for you** — `0005_ai_lesson_engine.sql` in
+   particular must be pasted into your own project's SQL editor before
+   the lesson engine will work against it.
 4. In Authentication settings, decide whether email confirmation is
    required for sign-up (the sign-up flow already handles both cases).
-5. No service-role key is needed for anything in this phase.
+5. Set `OPENAI_API_KEY` (see "Environment variables" above) to actually
+   generate lessons — without it, lesson start/continue fails honestly
+   rather than faking a response. Set `SUPABASE_SERVICE_ROLE_KEY` too —
+   the AI lesson engine's writes require it; see "AI lesson engine"
+   below for why.
 
 `0001_init.sql` creates `profiles` and `user_languages` with Row Level
 Security scoped to `auth.uid()` on both, plus a trigger that auto-creates
@@ -74,12 +98,17 @@ validation. `0003_placement_category_breakdown.sql` adds one additive
 per-category (vocabulary/grammar/reading) breakdown. `0004_placement_test_version.sql`
 adds a `test_version` column (e.g. `"en-v1"`) so historical attempts stay
 interpretable if a bank is ever revised — always resolved server-side,
-never accepted from the client.
+never accepted from the client. `0005_ai_lesson_engine.sql` creates
+`lesson_sessions` and `lesson_messages` — readable via RLS scoped to
+`auth.uid()`, but with **no insert/update grant at all** for
+`authenticated`/`anon`: see "AI lesson engine" under "Current phase"
+below for why an ordinary owner-scoped RLS policy isn't enough here, and
+why writes instead require `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## Current phase
 
-**Phase 2 — Onboarding**, on top of Phase 1 (Foundation + Security + Auth +
-Database + Responsive UI Skeleton).
+**Phase 3 — AI Lesson Engine**, on top of Phase 2 (Onboarding) and Phase 1
+(Foundation + Security + Auth + Database + Responsive UI Skeleton).
 
 Phase 1, still in place:
 
@@ -147,9 +176,60 @@ teacher → dashboard.
   reuse the same tokens/components for a coherent look but aren't
   verified against a real mockup.
 
-Not built yet, intentionally: AI lesson engine, voice/pronunciation,
-Language Brain, spaced repetition, Business Course, career tools, billing,
-push notifications, and the full 50-language content set.
+Phase 3, new in this pass — the AI lesson engine. One mode: **General AI
+Lesson**, text-only.
+
+- Start a lesson from the dashboard (`StartLessonButton` →
+  `startLessonAction`); it generates and validates the opening AI turn
+  **before** writing anything to the database, so a failed AI call never
+  leaves an orphaned session. Continue it at
+  `/dashboard/lessons/[sessionId]` — a full chat-style view
+  (`LiveLessonView`) with the teacher's correction callouts shown inline.
+- All trusted lesson context (target/native language, CEFR level,
+  learning goal, teacher persona) is **snapshotted onto the
+  `lesson_sessions` row at creation** and re-read from that row on every
+  later turn — never from a live profile re-read, and never from
+  anything the client submits. A learner who hasn't taken a placement
+  test (true for every target language except English/French right now)
+  gets a lesson anyway: the model is told explicitly that the level is
+  unassessed and to teach cautiously, rather than the app inventing a
+  level.
+- The AI provider (OpenAI, `src/lib/ai/`) sits behind a small interface.
+  If `OPENAI_API_KEY` is unset, lessons fail with an honest configuration
+  error — never a fabricated response. Every AI response is validated
+  against a Zod schema (`src/lib/ai/lessonResponseSchema.ts`) before
+  anything is persisted; malformed output is rejected outright.
+- **Writes are `service_role`-only, deliberately.** A browser's Supabase
+  session and a Server Action's server client share the same
+  publishable-key credential, so an `auth.uid() = user_id` RLS policy
+  alone would let an authenticated browser insert a fabricated
+  `role = 'teacher'` message, mark its own lesson `'completed'`, or
+  rewrite its snapshot fields directly — none of that is
+  cross-tenant, so tenant-scoped RLS wouldn't catch it. `authenticated`/
+  `anon` get no insert/update grant on `lesson_sessions`/`lesson_messages`
+  at all; every write goes through a `service_role` client
+  (`src/lib/supabase/serviceRole.ts`) used only inside
+  `src/features/lessons/actions.ts`, which derives `user_id` from a
+  server-verified session, never from client input. Two triggers back
+  this up structurally even against that trusted code: session snapshot
+  fields are immutable after creation and status may only move
+  `active → completed`/`active → abandoned`; messages can never be
+  updated or deleted once written, by anyone.
+- Real, DB-backed rate limiting (`src/lib/lessons/rateLimit.ts`, no new
+  infra) and client-UUID + DB-unique-constraint idempotency for message
+  sends (safe to retry after a network hiccup or AI failure without
+  duplicating your message or losing it).
+- A one-off, session-local summary is generated when a lesson completes —
+  it explicitly does not claim anything about other sessions, streaks, or
+  history. That's deliberately as far as this phase goes; cross-session
+  memory and adaptation is Phase 4 (Language Brain), not built here.
+- Automated tests: `src/lib/lessons/*.test.ts`, `src/lib/ai/*.test.ts`,
+  `src/features/lessons/actions.test.ts` — run with `npm run test`.
+
+Not built yet, intentionally: voice/pronunciation scoring, Language Brain
+(cross-session memory/adaptation), spaced repetition, Business Course,
+career tools, billing, push notifications, and the full 50-language
+content set.
 
 ## Security principles
 
@@ -159,9 +239,12 @@ push notifications, and the full 50-language content set.
   DAL, independent of what any parent layout already checked.
 - Supabase Row Level Security is mandatory on every table, scoped to
   `auth.uid()` — no broad public policies.
-- The Supabase service-role key is never used in this codebase; if a
-  future phase needs it, it must stay server-only and out of any
-  `NEXT_PUBLIC_` variable.
+- The Supabase service-role key is used in exactly one place — the AI
+  lesson engine's writes (`src/lib/supabase/serviceRole.ts`) — because
+  `auth.uid()`-scoped RLS cannot distinguish "our server generated this"
+  from "the browser wrote this with its own session"; it stays
+  server-only, out of any `NEXT_PUBLIC_` variable, and out of every
+  other feature.
 - User-facing errors are always generic; real error detail is logged
   server-side only (`src/lib/utils/errors.ts`).
 - Baseline security headers (CSP, `X-Content-Type-Options`,
@@ -176,6 +259,15 @@ push notifications, and the full 50-language content set.
   matching Postgres CHECK constraint as a second, independent gate.
 - No fabricated data: a learner who hasn't taken a real placement test
   has a `null` CEFR level ("not assessed yet"), never an invented one.
+- The AI lesson engine never trusts the client for anything that decides
+  lesson content or state: `sendLessonMessageAction` builds its context
+  solely from the session's own DB row, and the learner's message text is
+  treated as untrusted lesson content, never as instructions, both in the
+  system prompt and — the actual guarantee — in code, since no client
+  field can reach a trusted field regardless of what the model does with
+  a prompt-injection attempt. The OpenAI key never reaches the browser or
+  a log line; an unconfigured/failed provider surfaces an honest error,
+  never a fabricated lesson response.
 
 ## Testing
 
@@ -183,21 +275,45 @@ push notifications, and the full 50-language content set.
 npm run test
 ```
 
-Runs the automated test suite (Vitest) for the placement scoring and
-validation logic — evidence-gated leveling (`scoring.ts`), the C1 ceiling,
-bank-scoped answer validation (`schemas.ts`), and "no authored bank means
-no fabricated result" (`questions.ts`). These are deterministic unit
-tests with no database or network dependency.
+Runs the automated test suite (Vitest) for:
+
+- Placement scoring and validation logic — evidence-gated leveling
+  (`scoring.ts`), the C1 ceiling, bank-scoped answer validation
+  (`schemas.ts`), and "no authored bank means no fabricated result"
+  (`questions.ts`).
+- The AI lesson engine — learner-message validation and summary-schema
+  validation (`src/lib/lessons/schemas.test.ts`), malformed
+  structured-AI-output rejection (`src/lib/ai/lessonResponseSchema.test.ts`),
+  prompt construction (correct target language, no fabricated CEFR,
+  security instructions always present, bounded context window;
+  `src/lib/lessons/prompt.test.ts`), and `sendLessonMessageAction`'s real
+  control flow — ownership/ended-session checks and, critically, that the
+  AI call's context always reflects the session's trusted snapshot even
+  when the client submits spoofed target-language/CEFR/teacher fields
+  (`src/features/lessons/actions.test.ts`).
+
+These are deterministic unit/mock-boundary tests with no live database or
+network dependency — the AI provider is mocked only at its boundary
+(`src/lib/ai/provider.ts`), not the business rules being tested. One case
+from the brief (idempotent duplicate submission) is intentionally not
+covered by a test — see the comment in `actions.test.ts` for why — and is
+instead a DB unique constraint (`0005_ai_lesson_engine.sql`) plus
+code-reviewed replay logic.
 
 ## Project structure
 
 ```
 src/
   app/            App Router routes: (marketing), (auth), (dashboard), (onboarding)
+                  (dashboard)/dashboard/lessons/[sessionId] — live lesson UI
   components/     Reusable UI (ui/) and layout/navigation primitives
-  features/       Feature-scoped modules (auth, dashboard, onboarding)
-  lib/            supabase/, auth/ (DAL), onboarding/ (DAL), placement/,
-                  plan/, security/, utils/
+  features/       Feature-scoped modules (auth, dashboard, onboarding, lessons)
+  lib/            supabase/ (per-request client, browser client,
+                  service-role client for lesson writes only), auth/
+                  (DAL), onboarding/ (DAL), placement/, plan/, security/,
+                  utils/, ai/ (provider + structured output schema),
+                  lessons/ (DAL, prompt builder, rate limiting, AI
+                  orchestration)
   constants/      Shared route/language/goal/teacher catalogs
   types/          Hand-maintained Supabase types
   styles/         Design tokens
@@ -205,5 +321,8 @@ src/
 supabase/
   migrations/     SQL schema + RLS policies (0001_init, 0002_onboarding,
                   0003_placement_category_breakdown,
-                  0004_placement_test_version)
+                  0004_placement_test_version, 0005_ai_lesson_engine)
+test/
+  server-only-stub.ts  Vitest alias target for the "server-only" package
+                       (see vitest.config.mts) — see AGENTS.md for why
 ```

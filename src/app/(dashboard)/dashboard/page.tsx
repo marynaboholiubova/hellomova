@@ -1,5 +1,6 @@
 import { verifySession } from "@/lib/auth/dal";
 import { getOnboardingProfile, getPrimaryUserLanguage } from "@/lib/onboarding/dal";
+import { getActiveLessonSession } from "@/lib/lessons/dal";
 import { DashboardHome } from "@/features/dashboard/components/DashboardHome";
 import { getLanguageByCode } from "@/constants/languages";
 import { getGoalByCode } from "@/constants/goals";
@@ -9,6 +10,7 @@ export default async function DashboardPage() {
   const { user } = await verifySession();
   const profile = await getOnboardingProfile();
   const primaryLanguage = await getPrimaryUserLanguage();
+  const activeLesson = await getActiveLessonSession();
 
   const targetLanguage = primaryLanguage
     ? getLanguageByCode(primaryLanguage.targetLanguageCode)
@@ -24,6 +26,8 @@ export default async function DashboardPage() {
       cefrLevel={primaryLanguage?.currentCefrLevel ?? null}
       goalLabel={goal?.label ?? null}
       teacherName={teacher?.name ?? null}
+      canStartLesson={Boolean(primaryLanguage)}
+      activeLessonSessionId={activeLesson?.id ?? null}
     />
   );
 }
