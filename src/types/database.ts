@@ -10,7 +10,34 @@
 export type Database = {
   public: {
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      language_brain_ingest_lesson: {
+        Args: {
+          p_lesson_session_id: string;
+          p_user_id: string;
+          p_target_language_code: string;
+          p_extraction_version: string;
+          p_errors: unknown;
+          p_vocabulary: unknown;
+          p_grammar_total_turns: number;
+          p_grammar_positive_turns: number;
+          p_duration_ms: number;
+        };
+        Returns: unknown;
+      };
+      language_brain_record_review_result: {
+        Args: {
+          p_review_item_id: string;
+          p_user_id: string;
+          p_expected_current_stage: number;
+          p_result: string;
+          p_new_stage: number;
+          p_new_due_at: string;
+          p_new_mastery_score: number | null;
+        };
+        Returns: boolean;
+      };
+    };
     Tables: {
       profiles: {
         Row: {
@@ -164,6 +191,216 @@ export type Database = {
         Update: {
           content?: string;
           metadata?: unknown | null;
+        };
+        Relationships: [];
+      };
+      language_brain_profiles: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          lessons_ingested_count: number;
+          last_ingested_lesson_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          lessons_ingested_count?: number;
+          last_ingested_lesson_at?: string | null;
+        };
+        Update: {
+          lessons_ingested_count?: number;
+          last_ingested_lesson_at?: string | null;
+        };
+        Relationships: [];
+      };
+      language_brain_skill_states: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          skill: string;
+          positive_evidence_count: number;
+          evidence_count: number;
+          // Generated column (Postgres computes it from the two counters
+          // above) — never settable via Insert/Update, see 0006_language_brain.sql.
+          score: number | null;
+          last_evidence_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          skill: string;
+          positive_evidence_count?: number;
+          evidence_count?: number;
+          last_evidence_at?: string | null;
+        };
+        Update: {
+          positive_evidence_count?: number;
+          evidence_count?: number;
+          last_evidence_at?: string | null;
+        };
+        Relationships: [];
+      };
+      language_brain_error_patterns: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          category: string;
+          pattern_key: string;
+          example_original: string;
+          example_corrected: string;
+          explanation: string | null;
+          first_seen_at: string;
+          last_seen_at: string;
+          occurrence_count: number;
+          is_recurring: boolean;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          category: string;
+          pattern_key: string;
+          example_original: string;
+          example_corrected: string;
+          explanation?: string | null;
+        };
+        Update: {
+          occurrence_count?: number;
+          last_seen_at?: string;
+          example_original?: string;
+          example_corrected?: string;
+          explanation?: string | null;
+          status?: string;
+        };
+        Relationships: [];
+      };
+      language_brain_vocabulary: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          canonical_form: string;
+          surface_form: string;
+          example_sentence: string | null;
+          translation: string | null;
+          first_seen_at: string;
+          last_seen_at: string;
+          encounter_count: number;
+          mastery_score: number | null;
+          review_stage: number;
+          next_review_at: string | null;
+          last_reviewed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          canonical_form: string;
+          surface_form: string;
+          example_sentence?: string | null;
+          translation?: string | null;
+          review_stage?: number;
+          next_review_at?: string | null;
+        };
+        Update: {
+          encounter_count?: number;
+          last_seen_at?: string;
+          example_sentence?: string | null;
+          translation?: string | null;
+          mastery_score?: number | null;
+          review_stage?: number;
+          next_review_at?: string | null;
+          last_reviewed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      language_brain_review_items: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          source_type: string;
+          source_id: string;
+          review_stage: number;
+          due_at: string;
+          status: string;
+          last_result: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          source_type: string;
+          source_id: string;
+          review_stage?: number;
+          due_at: string;
+        };
+        Update: {
+          review_stage?: number;
+          due_at?: string;
+          status?: string;
+          last_result?: string | null;
+        };
+        Relationships: [];
+      };
+      language_brain_ingestions: {
+        Row: {
+          id: string;
+          lesson_session_id: string;
+          user_id: string;
+          target_language_code: string;
+          status: string;
+          extraction_version: string;
+          errors_extracted_count: number;
+          vocabulary_extracted_count: number;
+          review_items_created_count: number;
+          review_items_updated_count: number;
+          skills_updated_count: number;
+          duration_ms: number | null;
+          error_message: string | null;
+          attempt_count: number;
+          started_at: string;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          lesson_session_id: string;
+          user_id: string;
+          target_language_code: string;
+          status?: string;
+          extraction_version: string;
+          attempt_count?: number;
+        };
+        Update: {
+          status?: string;
+          extraction_version?: string;
+          errors_extracted_count?: number;
+          vocabulary_extracted_count?: number;
+          review_items_created_count?: number;
+          review_items_updated_count?: number;
+          skills_updated_count?: number;
+          duration_ms?: number | null;
+          error_message?: string | null;
+          attempt_count?: number;
+          completed_at?: string | null;
         };
         Relationships: [];
       };

@@ -35,6 +35,21 @@ vi.mock("@/lib/lessons/generateSummary", () => ({
   generateLessonSummary: mockGenerateLessonSummary,
 }));
 
+// Language Brain personalization/ingestion are exercised in their own
+// unit tests (src/lib/languageBrain/*.test.ts) against real deterministic
+// logic — here they're mocked at the boundary, same as the AI turn
+// generator above, so this file stays focused on sendLessonMessageAction's
+// own control flow.
+const mockBuildLessonPersonalizationContext = vi.fn();
+vi.mock("@/lib/languageBrain/personalization", () => ({
+  buildLessonPersonalizationContext: mockBuildLessonPersonalizationContext,
+}));
+
+const mockEnsureLessonIngested = vi.fn();
+vi.mock("@/lib/languageBrain/ingest", () => ({
+  ensureLessonIngested: mockEnsureLessonIngested,
+}));
+
 // sendLessonMessageAction now performs all its writes via the
 // service-role client (@/lib/supabase/serviceRole) — see
 // 0005_ai_lesson_engine.sql: lesson_sessions/lesson_messages grant no
@@ -89,6 +104,8 @@ beforeEach(() => {
   mockCheckLessonMessageRateLimit.mockResolvedValue({ allowed: true });
   mockListRecentLessonMessages.mockResolvedValue([]);
   mockInsert.mockResolvedValue({ error: null });
+  mockBuildLessonPersonalizationContext.mockResolvedValue(null);
+  mockEnsureLessonIngested.mockResolvedValue(undefined);
 });
 
 describe("sendLessonMessageAction — A: cannot continue another user's lesson", () => {
@@ -184,6 +201,62 @@ describe("sendLessonMessageAction — C/D/E: trusted context, not client input",
     const [contextArg] = mockGenerateLessonTurn.mock.calls[0];
     expect(contextArg.teacher.id).toBe("anna");
     expect(contextArg.teacher.id).not.toBe("alex");
+  });
+
+  it("R: Language Brain personalization is always built from the session's own snapshot (user id + target language), never client input", async () => {
+    const spoofed = buildFormData({ userId: "someone-else", targetLanguageCode: "de" });
+
+    await sendLessonMessageAction(undefined, spoofed);
+
+    expect(mockBuildLessonPersonalizationContext).toHaveBeenCalledWith("user-1", "fr");
+  });
+});
+
+describe("sendLessonMessageAction — lesson completion triggers Language Brain ingestion", () => {
+  const activeSession = {
+    id: "123e4567-e89b-12d3-a456-426614174000",
+    userId: "user-1",
+    status: "active" as const,
+    targetLanguageCode: "fr",
+    nativeLanguageCode: "uk",
+    cefrLevel: null,
+    learningGoal: "travel",
+    teacherId: "anna",
+  };
+
+  beforeEach(() => {
+    mockGetOwnedLessonSession.mockResolvedValue(activeSession);
+  });
+
+  it("calls ensureLessonIngested when the AI turn marks the lesson complete", async () => {
+    mockGenerateLessonTurn.mockResolvedValue({
+      success: true,
+      data: {
+        teacherMessage: "Great work, see you next time!",
+        correction: { hasCorrection: false, original: null, corrected: null, explanation: null },
+        lessonState: { objective: "Greetings", turnType: "wrap_up", shouldComplete: true },
+      },
+    });
+    mockGenerateLessonSummary.mockResolvedValue({ success: false });
+
+    await sendLessonMessageAction(undefined, buildFormData());
+
+    expect(mockEnsureLessonIngested).toHaveBeenCalledWith(activeSession.id);
+  });
+
+  it("does not call ensureLessonIngested when the lesson continues", async () => {
+    mockGenerateLessonTurn.mockResolvedValue({
+      success: true,
+      data: {
+        teacherMessage: "Keep going!",
+        correction: { hasCorrection: false, original: null, corrected: null, explanation: null },
+        lessonState: { objective: "Greetings", turnType: "practice", shouldComplete: false },
+      },
+    });
+
+    await sendLessonMessageAction(undefined, buildFormData());
+
+    expect(mockEnsureLessonIngested).not.toHaveBeenCalled();
   });
 });
 

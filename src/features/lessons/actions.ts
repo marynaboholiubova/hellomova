@@ -21,6 +21,8 @@ import { getLanguageByCode } from "@/constants/languages";
 import { getGoalByCode } from "@/constants/goals";
 import { getTeacherById } from "@/constants/teachers";
 import { toSafeErrorMessage } from "@/lib/utils/errors";
+import { buildLessonPersonalizationContext } from "@/lib/languageBrain/personalization";
+import { ensureLessonIngested } from "@/lib/languageBrain/ingest";
 import type { LessonActionState, SendMessageActionState } from "./types";
 
 const PROMPT_VERSION = "lesson-v1";
@@ -59,6 +61,11 @@ async function loadTrustedLessonContext(): Promise<
   const cefrResult = CefrLevelSchema.safeParse(primaryLanguage.currentCefrLevel);
   const cefrLevel = cefrResult.success ? cefrResult.data : null;
 
+  const brainContext = await buildLessonPersonalizationContext(
+    profile.id,
+    primaryLanguage.targetLanguageCode,
+  );
+
   return {
     ok: true,
     context: {
@@ -69,6 +76,7 @@ async function loadTrustedLessonContext(): Promise<
       teacher,
       mode: "general",
       objective: null,
+      brainContext,
     },
     targetLanguageCode: primaryLanguage.targetLanguageCode,
     nativeLanguageCode: profile.nativeLanguageCode,
@@ -224,6 +232,14 @@ export async function sendLessonMessageAction(
     return { error: "Something about this lesson looks invalid. Please contact support." };
   }
 
+  // Scoped to this session's own trusted snapshot (user + target
+  // language), never the client — same trust boundary as every other
+  // field here. See src/lib/languageBrain/personalization.ts.
+  const brainContext = await buildLessonPersonalizationContext(
+    session.userId,
+    session.targetLanguageCode,
+  );
+
   const context: LessonContext = {
     targetLanguageName: getLanguageByCode(session.targetLanguageCode)?.name ?? session.targetLanguageCode,
     nativeLanguageName: getLanguageByCode(session.nativeLanguageCode)?.name ?? session.nativeLanguageCode,
@@ -236,6 +252,7 @@ export async function sendLessonMessageAction(
     // conversational continuity to infer the objective from, rather than
     // this codebase separately tracking and re-injecting it.
     objective: null,
+    brainContext,
   };
 
   const recentTurns = await listRecentLessonMessages(sessionId, MAX_RECENT_TURNS);
@@ -277,6 +294,12 @@ export async function sendLessonMessageAction(
       })
       .eq("id", sessionId)
       .eq("user_id", session.userId);
+
+    // Best-effort, retryable: Language Brain ingestion never blocks or
+    // corrupts lesson completion, which has already succeeded above (see
+    // AGENTS.md Section 25). ensureLessonIngested never throws — a
+    // failure here is recorded for retry, not surfaced to the learner.
+    await ensureLessonIngested(sessionId);
   }
 
   return {

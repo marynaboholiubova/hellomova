@@ -3,6 +3,7 @@ export const ROUTES = {
   login: "/login",
   signup: "/signup",
   dashboard: "/dashboard",
+  languageBrain: "/dashboard/language-brain",
   onboardingNativeLanguage: "/onboarding/native-language",
   onboardingTargetLanguage: "/onboarding/target-language",
   onboardingGoal: "/onboarding/goal",

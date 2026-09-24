@@ -14,6 +14,7 @@ function makeContext(overrides: Partial<LessonContext> = {}): LessonContext {
     teacher: anna,
     mode: "general",
     objective: null,
+    brainContext: null,
     ...overrides,
   };
 }
@@ -70,6 +71,47 @@ describe("buildLessonSystemPrompt / buildLessonMessages — K: system instructio
     const prompt = buildLessonSystemPrompt(makeContext({ teacher: mary }));
     expect(prompt).toContain("TEXT ONLY");
     expect(prompt).toMatch(/never claim to have heard/i);
+  });
+});
+
+describe("buildLessonSystemPrompt — Language Brain personalization hook", () => {
+  it("adds no personalization section for a learner with no Language Brain evidence yet", () => {
+    const prompt = buildLessonSystemPrompt(makeContext({ brainContext: null }));
+    expect(prompt).not.toContain("LANGUAGE BRAIN CONTEXT");
+  });
+
+  it("adds no personalization section when the brain context has evidence in no category at all", () => {
+    const prompt = buildLessonSystemPrompt(
+      makeContext({ brainContext: { topGrammarPatterns: [], dueVocabulary: [], weakAreas: [], strengths: [] } }),
+    );
+    expect(prompt).not.toContain("LANGUAGE BRAIN CONTEXT");
+  });
+
+  it("includes real recurring patterns and due vocabulary when evidence exists, bounded to a reinforcement rule rather than a full drill", () => {
+    const prompt = buildLessonSystemPrompt(
+      makeContext({
+        brainContext: {
+          topGrammarPatterns: ['past tense irregular go (seen 3 times): "I goed" -> "I went"'],
+          dueVocabulary: ["reservation"],
+          weakAreas: [],
+          strengths: [],
+        },
+      }),
+    );
+    expect(prompt).toContain("LANGUAGE BRAIN CONTEXT");
+    expect(prompt).toContain("I goed");
+    expect(prompt).toContain("reservation");
+    expect(prompt).toMatch(/20-30%/);
+    expect(prompt).not.toMatch(/100% of every lesson/);
+  });
+
+  it("never invents Language Brain history beyond what's actually passed in", () => {
+    const prompt = buildLessonSystemPrompt(
+      makeContext({
+        brainContext: { topGrammarPatterns: [], dueVocabulary: ["merci"], weakAreas: [], strengths: [] },
+      }),
+    );
+    expect(prompt).toContain("never invent additional history");
   });
 });
 

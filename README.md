@@ -1,11 +1,12 @@
 # HelloMova
 
 HelloMova is a premium AI language-learning platform. This repository is
-currently at **Phase 3: AI Lesson Engine**, on top of Phase 1 (security/
-auth/database foundation) and Phase 2 (onboarding). Voice, pronunciation
-coaching, Language Brain (cross-session memory/adaptation), Business
-Course, career tools, billing, and the full multilingual content set are
-**not** built yet; they are future phases.
+currently at **Phase 4: Language Brain**, on top of Phase 1 (security/
+auth/database foundation), Phase 2 (onboarding), and Phase 3 (the AI
+lesson engine). Voice, pronunciation coaching/scoring, listening scoring,
+an interactive Review Mode UI, Business/Career/Kids Language Brain,
+Business Course, career tools, billing, and the full multilingual content
+set are **not** built yet; they are future phases.
 
 > The onboarding screens have had a visual pass matching
 > `design-references/onboarding/` (colors, spacing, hierarchy) — but only
@@ -73,12 +74,13 @@ Level Security, not by keeping these secret.
 3. Run the SQL in `supabase/migrations/0001_init.sql`, then
    `0002_onboarding.sql`, then `0003_placement_category_breakdown.sql`,
    then `0004_placement_test_version.sql`, then
-   `0005_ai_lesson_engine.sql`, against your project **in that order** —
-   either paste them into the Supabase SQL editor, or apply them with the
-   Supabase CLI (`supabase db push`) if you use one. **This repository
-   does not apply migrations for you** — `0005_ai_lesson_engine.sql` in
+   `0005_ai_lesson_engine.sql`, then `0006_language_brain.sql`, against
+   your project **in that order** — either paste them into the Supabase
+   SQL editor, or apply them with the Supabase CLI (`supabase db push`)
+   if you use one. **This repository does not apply migrations for you**
+   — `0005_ai_lesson_engine.sql` and `0006_language_brain.sql` in
    particular must be pasted into your own project's SQL editor before
-   the lesson engine will work against it.
+   the lesson engine / Language Brain will work against it.
 4. In Authentication settings, decide whether email confirmation is
    required for sign-up (the sign-up flow already handles both cases).
 5. Set `OPENAI_API_KEY` (see "Environment variables" above) to actually
@@ -103,12 +105,18 @@ never accepted from the client. `0005_ai_lesson_engine.sql` creates
 `auth.uid()`, but with **no insert/update grant at all** for
 `authenticated`/`anon`: see "AI lesson engine" under "Current phase"
 below for why an ordinary owner-scoped RLS policy isn't enough here, and
-why writes instead require `SUPABASE_SERVICE_ROLE_KEY`.
+why writes instead require `SUPABASE_SERVICE_ROLE_KEY`. `0006_language_brain.sql`
+adds the Language Brain's six tables (per-user + per-target-language
+error/vocabulary/skill/review memory, plus an ingestion idempotency
+ledger) with the same read-only-RLS / service-role-write pattern, and two
+`service_role`-only SQL functions that atomically apply one lesson's
+evidence or one review result — see "Language Brain" below.
 
 ## Current phase
 
-**Phase 3 — AI Lesson Engine**, on top of Phase 2 (Onboarding) and Phase 1
-(Foundation + Security + Auth + Database + Responsive UI Skeleton).
+**Phase 4 — Language Brain**, on top of Phase 3 (AI Lesson Engine),
+Phase 2 (Onboarding), and Phase 1 (Foundation + Security + Auth +
+Database + Responsive UI Skeleton).
 
 Phase 1, still in place:
 
@@ -221,15 +229,74 @@ Lesson**, text-only.
   duplicating your message or losing it).
 - A one-off, session-local summary is generated when a lesson completes —
   it explicitly does not claim anything about other sessions, streaks, or
-  history. That's deliberately as far as this phase goes; cross-session
-  memory and adaptation is Phase 4 (Language Brain), not built here.
+  history at generation time; the Language Brain (below) is what turns
+  that evidence into cross-session memory afterward.
 - Automated tests: `src/lib/lessons/*.test.ts`, `src/lib/ai/*.test.ts`,
   `src/features/lessons/actions.test.ts` — run with `npm run test`.
 
-Not built yet, intentionally: voice/pronunciation scoring, Language Brain
-(cross-session memory/adaptation), spaced repetition, Business Course,
-career tools, billing, push notifications, and the full 50-language
-content set.
+Phase 4, new in this pass — the **Language Brain**: durable, cross-session
+learning memory, owned by `(user_id, target_language_code)` — never by
+teacher, so switching teachers never resets or forks it.
+
+- **Ingestion**: when a lesson completes, `ensureLessonIngested`
+  (`src/lib/languageBrain/ingest.ts`) reads that lesson's already-real,
+  already-persisted evidence (per-turn corrections, the session's
+  vocabulary list) and turns it into durable memory — recurring error
+  patterns (a category + normalized pattern key, AI-classified with a
+  deterministic fallback if the AI is unavailable or its output doesn't
+  validate), vocabulary encounters, and a grammar skill score. Idempotent
+  by construction: a `language_brain_ingestions` row with a unique
+  `lesson_session_id` tracks status, and a single atomic Postgres function
+  applies all of one lesson's evidence or none of it — a retry after a
+  failure can't double-count. Ingestion runs synchronously after
+  completion and again, lazily, from the Language Brain view for any
+  recent completed lesson still missing a successful ingestion — a
+  self-healing retry with no cron/queue infrastructure. A failure here
+  never undoes the lesson's own completion.
+- **Recurring vs. one-off**: a mistake only counts as "recurring" after
+  it's been seen in **2 distinct lessons** (a generated database column,
+  not just application logic, so the threshold can't be silently
+  bypassed). One typo in one lesson is never shown as a weakness.
+- **Grammar score, explainable and concurrency-safe**: a real cumulative
+  percentage — the share of learner turns with no grammar-family
+  correction — computed by Postgres itself as a generated column from two
+  raw counters (positive/total), which each lesson's ingestion atomically
+  *adds to* rather than overwrites. That's what lets two lessons finish
+  ingesting at the same time without one silently erasing the other's
+  contribution, and it means no rounding error can build up over months
+  of lessons the way re-averaging an already-rounded percentage would.
+  Vocabulary, reading, writing, speaking, listening, and pronunciation are
+  **never** given a fabricated score in this phase: vocabulary is shown
+  as real counts instead, and the rest show "Not assessed yet" because a
+  text-only lesson has no real evidence for them.
+- **Spaced repetition**: a fixed 1 day → 3 days → 1 week → 30 days review
+  schedule per vocabulary item. A failed review resets to day 1; a
+  successful one advances, and passing the final stage is what marks a
+  word "mastered" — never just appearing once. The server-side model for
+  recording a review result is real and tested
+  (`recordReviewResultAction`), though the interactive flashcard-style
+  Review Mode screen itself isn't built yet — the Language Brain view
+  shows real due counts/items only.
+- **Personalization, bounded**: new lessons get a small, capped summary
+  of the learner's top recurring grammar patterns, due vocabulary, and
+  weak areas woven into roughly 20–30% of the lesson — never the whole
+  thing, and never more than a fixed few items regardless of how much
+  history exists, so the prompt never grows unbounded.
+- **Security**: writes go through the same `service_role`-only pattern as
+  the lesson engine, for the same reason — a browser's Supabase session
+  can't be told apart from a trusted server call by `auth.uid()` alone,
+  and this is derived learning state a user must never be able to fake
+  (mastery, scores, recurring-mistake counts, review dates). See
+  `AGENTS.md`'s "Language Brain" section for the full model.
+- Automated tests: `src/lib/languageBrain/*.test.ts`,
+  `src/features/languageBrain/actions.test.ts`, plus lesson-engine tests
+  extended for the personalization hook and ingestion trigger — run with
+  `npm run test`.
+
+Not built yet, intentionally: real pronunciation/listening scoring or
+memory, an interactive Review Mode UI, Business/Career/Kids Language
+Brain, Business Course, career tools, billing, push notifications, and
+the full 50-language content set.
 
 ## Security principles
 
@@ -239,12 +306,17 @@ content set.
   DAL, independent of what any parent layout already checked.
 - Supabase Row Level Security is mandatory on every table, scoped to
   `auth.uid()` — no broad public policies.
-- The Supabase service-role key is used in exactly one place — the AI
-  lesson engine's writes (`src/lib/supabase/serviceRole.ts`) — because
-  `auth.uid()`-scoped RLS cannot distinguish "our server generated this"
-  from "the browser wrote this with its own session"; it stays
-  server-only, out of any `NEXT_PUBLIC_` variable, and out of every
-  other feature.
+- The Supabase service-role key is used in exactly two places — the AI
+  lesson engine's writes and the Language Brain's writes
+  (`src/lib/supabase/serviceRole.ts`) — because `auth.uid()`-scoped RLS
+  cannot distinguish "our server generated this" from "the browser wrote
+  this with its own session"; it stays server-only, out of any
+  `NEXT_PUBLIC_` variable, and out of every other feature.
+- The Language Brain never lets the browser set a skill score, a
+  recurring-mistake count, a mastery flag, or a review date directly —
+  every one of those is computed server-side from real, already-persisted
+  lesson evidence, atomically applied, and idempotent (the same completed
+  lesson can't be ingested twice).
 - User-facing errors are always generic; real error detail is logged
   server-side only (`src/lib/utils/errors.ts`).
 - Baseline security headers (CSP, `X-Content-Type-Options`,
@@ -285,20 +357,40 @@ Runs the automated test suite (Vitest) for:
   validation (`src/lib/lessons/schemas.test.ts`), malformed
   structured-AI-output rejection (`src/lib/ai/lessonResponseSchema.test.ts`),
   prompt construction (correct target language, no fabricated CEFR,
-  security instructions always present, bounded context window;
+  security instructions always present, bounded context window, and the
+  Language Brain personalization section only appears with real evidence
+  and stays within its reinforcement bound;
   `src/lib/lessons/prompt.test.ts`), and `sendLessonMessageAction`'s real
-  control flow — ownership/ended-session checks and, critically, that the
-  AI call's context always reflects the session's trusted snapshot even
-  when the client submits spoofed target-language/CEFR/teacher fields
+  control flow — ownership/ended-session checks, that the AI call's
+  context always reflects the session's trusted snapshot even when the
+  client submits spoofed target-language/CEFR/teacher fields, that
+  personalization is built from the session's own user id/target
+  language, and that lesson completion triggers Language Brain ingestion
   (`src/features/lessons/actions.test.ts`).
+- The Language Brain — the grammar-score formula and the arithmetic
+  property that makes concurrent per-lesson contributions additive rather
+  than overwriting (`src/lib/languageBrain/scoring.test.ts`),
+  the fixed 1d/3d/7d/30d spaced-repetition schedule and failure-reset rule
+  (`spacedRepetition.test.ts`), AI-classification fallback on malformed or
+  incomplete output (`errorClassification.test.ts`), ingestion's
+  idempotency short-circuit, per-lesson pattern dedup, grammar-evidence
+  derivation, vocabulary normalization, and failure/retry behavior
+  (`ingest.test.ts`), weak-area ranking and the self-healing retry sweep
+  (`dal.test.ts`), the bounded/scoped personalization context builder
+  (`personalization.test.ts`), and `recordReviewResultAction`'s
+  ownership check plus server-computed (never client-trusted)
+  stage/mastery values (`src/features/languageBrain/actions.test.ts`).
 
 These are deterministic unit/mock-boundary tests with no live database or
 network dependency — the AI provider is mocked only at its boundary
 (`src/lib/ai/provider.ts`), not the business rules being tested. One case
-from the brief (idempotent duplicate submission) is intentionally not
-covered by a test — see the comment in `actions.test.ts` for why — and is
-instead a DB unique constraint (`0005_ai_lesson_engine.sql`) plus
-code-reviewed replay logic.
+from the Phase 3 brief (idempotent duplicate submission) and the Phase 4
+cross-lesson recurrence count/RLS/grant/trigger guarantees are
+intentionally not covered by a test — see the comments in `actions.test.ts`
+and `ingest.test.ts` for why — and are instead DB unique
+constraints/generated columns (`0005_ai_lesson_engine.sql`,
+`0006_language_brain.sql`) plus code-reviewed logic, verified manually
+against a live Supabase project.
 
 ## Project structure
 
@@ -306,14 +398,19 @@ code-reviewed replay logic.
 src/
   app/            App Router routes: (marketing), (auth), (dashboard), (onboarding)
                   (dashboard)/dashboard/lessons/[sessionId] — live lesson UI
+                  (dashboard)/dashboard/language-brain — Language Brain view
   components/     Reusable UI (ui/) and layout/navigation primitives
-  features/       Feature-scoped modules (auth, dashboard, onboarding, lessons)
+  features/       Feature-scoped modules (auth, dashboard, onboarding,
+                  lessons, languageBrain)
   lib/            supabase/ (per-request client, browser client,
-                  service-role client for lesson writes only), auth/
-                  (DAL), onboarding/ (DAL), placement/, plan/, security/,
-                  utils/, ai/ (provider + structured output schema),
-                  lessons/ (DAL, prompt builder, rate limiting, AI
-                  orchestration)
+                  service-role client for lesson + Language Brain writes
+                  only), auth/ (DAL), onboarding/ (DAL), placement/,
+                  plan/, security/, utils/, ai/ (provider + structured
+                  output schema), lessons/ (DAL, prompt builder, rate
+                  limiting, AI orchestration), languageBrain/ (DAL,
+                  ingestion pipeline, AI classification, deterministic
+                  scoring + spaced-repetition math, bounded
+                  personalization context builder)
   constants/      Shared route/language/goal/teacher catalogs
   types/          Hand-maintained Supabase types
   styles/         Design tokens
@@ -321,7 +418,8 @@ src/
 supabase/
   migrations/     SQL schema + RLS policies (0001_init, 0002_onboarding,
                   0003_placement_category_breakdown,
-                  0004_placement_test_version, 0005_ai_lesson_engine)
+                  0004_placement_test_version, 0005_ai_lesson_engine,
+                  0006_language_brain)
 test/
   server-only-stub.ts  Vitest alias target for the "server-only" package
                        (see vitest.config.mts) — see AGENTS.md for why

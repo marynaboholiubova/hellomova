@@ -15,9 +15,12 @@ built the technical foundation (security, auth, database, responsive UI
 skeleton); Phase 2 added onboarding (native language → target language →
 goal → placement test → CEFR result → personal plan → AI teacher →
 dashboard); Phase 3 added the real AI lesson engine (one mode — General AI
-Lesson, text-only). Do not implement future phases (voice, pronunciation
-scoring, Language Brain / cross-session memory, Business Course, career
-tools, billing, multilingual content) without explicit instruction.
+Lesson, text-only); Phase 4 added the Language Brain (durable, per-user
++ per-target-language cross-session learning memory derived from
+completed lessons). Do not implement future phases (voice, pronunciation
+scoring/memory, listening scoring, an interactive Review Mode UI,
+Business/Career/Kids Language Brain, Business Course, career tools,
+billing, multilingual content) without explicit instruction.
 
 `src/constants/languages.ts` holds HelloMova's real, finalized 50-language
 launch catalog (with the 5 Arabic dialects modeled as `variantOf: "ar"`).
@@ -92,10 +95,10 @@ specifically to prevent regressing either one:
 
 One mode exists: **General AI Lesson**, text-only (no voice/pronunciation
 scoring — Mary's persona explicitly disclaims ever having "heard" the
-learner). This is deliberately **not** Phase 4's Language Brain: nothing
-here remembers or reasons across sessions. A session's `summary` (session
-`lesson_sessions.summary`) covers only that one session and says so in its
-own generation prompt.
+learner). A session's `summary` (`lesson_sessions.summary`) covers only
+that one session and says so in its own generation prompt — cross-session
+memory is the Language Brain (below), a separate system layered on top,
+not part of this section.
 
 - **Data model** (`supabase/migrations/0005_ai_lesson_engine.sql`):
   `lesson_sessions` snapshots its context (target/native language, CEFR,
@@ -197,6 +200,197 @@ own generation prompt.
   imported from a Client Component module," this alias is why it exists —
   don't remove it.
 
+### Language Brain (Phase 4)
+
+Durable, cross-session learning memory, owned by **(`user_id`,
+`target_language_code`) — never `teacher_id`.** Switching teachers
+(Anna → James → Sofia → Alex → Mary) never resets or forks this data;
+teacher personality is presentation only. A learner studying two target
+languages gets two fully isolated memories — every query filters by both
+`user_id` and `target_language_code`.
+
+- **Data model** (`supabase/migrations/0006_language_brain.sql`, all
+  additive, RLS-select-only for `authenticated`):
+  `language_brain_profiles` (one row per user+language, evidence-volume
+  anchor), `language_brain_skill_states` (normalized per-skill score —
+  Phase 4 only ever writes `'grammar'`; see below), `language_brain_error_patterns`
+  (one row per normalized `pattern_key`, `occurrence_count` +
+  `is_recurring` — a **generated column**, `occurrence_count >= 2`, so the
+  recurring threshold can't be spoofed by a write path that forgets to
+  set it), `language_brain_vocabulary` (one row per normalized
+  `canonical_form`), `language_brain_review_items` (the durable spaced-
+  repetition queue — one row per source item, updated in place, not a
+  log), and `language_brain_ingestions` (the idempotency ledger — `unique
+  (lesson_session_id)` is the actual guarantee a lesson is never ingested
+  twice).
+- **Writes require `service_role`, same threat model as Phase 3 — read
+  0005's header comment, then 0006's.** Every Language Brain row is
+  entirely server-derived from trusted lesson evidence; the browser must
+  never be able to say "I made this error," "my grammar score is 90," or
+  "mark this word mastered." `authenticated`/`anon` get an explicit
+  `revoke` (not just "no policy") on insert/update/delete for every table
+  here. All writes go through exactly two SQL functions, granted execute
+  **only** to `service_role` (never `authenticated`, never as an exposed
+  `security definer` RPC — that would reopen the identical hole 0005
+  warns about):
+  - `language_brain_ingest_lesson()` — called from
+    `src/lib/languageBrain/ingest.ts`. Runs as one Postgres transaction:
+    upserts error patterns/vocabulary, atomically ADDS this lesson's raw
+    grammar evidence to the cumulative counters (see "Grammar skill
+    score" below — **not** a precomputed final score), bumps the
+    profile, and marks the ingestion row `'completed'`, or none of that
+    happens at all.
+  - `language_brain_record_review_result()` — called from
+    `src/features/languageBrain/actions.ts`
+    (`recordReviewResultAction`). Takes an **optimistic-concurrency**
+    `p_expected_current_stage`; if the row's stage no longer matches
+    (already advanced by a concurrent request), it refuses rather than
+    overwriting with stale data.
+  - The review-result function takes its new/final values (stage, due
+    date, mastery) as pre-computed parameters from trusted, unit-tested
+    application code (`src/lib/languageBrain/spacedRepetition.ts`) — that
+    function persists, it doesn't decide; optimistic concurrency (above)
+    is what keeps that safe under a race. The ingest function is
+    different and deliberately does **not** take a precomputed final
+    score — see "Grammar skill score" below for why, and for the
+    concurrency bug an earlier version of this function had and no
+    longer has.
+- **Reads stay on the ordinary per-request RLS client**
+  (`src/lib/languageBrain/dal.ts`, `personalization.ts`) — `auth.uid()`
+  scoping is a real backstop here, not decoration, same as Phase 3.
+- **Ingestion pipeline** (`src/lib/languageBrain/ingest.ts`,
+  `ensureLessonIngested(sessionId)`): reads the completed
+  `lesson_session` + its `lesson_messages` (already-real, already-
+  persisted evidence — per-turn `metadata.correction` and the session
+  `summary.vocabulary` list), sends only the real observed corrections to
+  a bounded AI **classification** call (category + normalized
+  `patternKey` — never invents a correction that didn't happen), dedupes
+  by `patternKey` **within this one lesson** (repeating a mistake 5× in
+  one lesson counts as at most 1 occurrence — recurring means recurring
+  *across lessons*, not noise within one), computes THIS LESSON's own
+  raw grammar-evidence counts (never a cumulative final score — see
+  "Grammar skill score" below), and calls the ingest RPC. Called
+  synchronously right after
+  `sendLessonMessageAction` marks a session `'completed'`, and again
+  lazily from `getLanguageBrainSummary()` for any of the caller's recent
+  completed sessions lacking a `'completed'` ingestion row — a
+  self-healing retry with no cron/queue infrastructure. Never throws: a
+  failure marks the ingestion row `'failed'` (retryable) and does not
+  affect the lesson, which already completed successfully.
+- **AI classification, not AI decision-making**
+  (`src/lib/languageBrain/errorClassification.ts`): the AI may categorize
+  an already-real correction (grammar/article/tense/…) and suggest a
+  grouping key; it never originates a correction, never decides
+  recurrence, never computes a score. A response that fails Zod
+  validation or doesn't cover exactly the input indices is rejected
+  **as a whole batch**, falling back to a deterministic classification
+  (`category: "other"`, a slugified pattern key) — ingestion never blocks
+  on the AI provider being unavailable.
+- **Recurring-error threshold: 2 distinct lessons**
+  (`RECURRING_ERROR_THRESHOLD` in `src/lib/languageBrain/constants.ts`,
+  mirrored by the `is_recurring` generated column). A single correction
+  is never shown as a weakness.
+- **Grammar skill score, concurrency-safe by construction**
+  (`0006_language_brain.sql`'s `language_brain_skill_states` table): a
+  genuine, explainable cumulative percentage — *"% of learner turns with
+  no grammar-family correction"* — computed as a **Postgres generated
+  column** (`score = round(100.0 * positive_evidence_count /
+  evidence_count)`) from two raw integer counters. `ingest.ts` sends only
+  THIS LESSON's own raw counts (`p_grammar_total_turns`,
+  `p_grammar_positive_turns`); `language_brain_ingest_lesson()` ADDS them
+  to the stored counters via `INSERT ... ON CONFLICT DO UPDATE SET x = x
+  + excluded.x` (Postgres's standard atomic-increment pattern, which
+  takes the row lock it needs as part of conflict resolution). **An
+  earlier version of this design had application code read the prior
+  score, compute a new final cumulative score in TypeScript, and pass
+  that final value in for the RPC to simply persist — two concurrent
+  ingestions for the same `(user, target_language_code)` could both read
+  the same stale prior state and the second write would silently
+  overwrite the first lesson's contribution. That version is gone.**
+  There is now exactly one place this percentage is ever computed (the
+  generated column), so it cannot drift from the counters, and because
+  the raw integers are summed exactly before the single rounding step
+  ever runs, repeated accumulation cannot compound rounding error the way
+  re-averaging an already-rounded percentage would.
+  `src/lib/languageBrain/scoring.ts`'s `deriveGrammarScore` mirrors this
+  same formula and is unit-tested (`scoring.test.ts`), but is **not**
+  used by any write path — it exists purely so the formula is documented
+  and tested outside of a live Postgres instance; if the generated
+  column's SQL expression ever changes, mirror the change there too.
+  **Vocabulary, reading, writing, speaking, listening, and pronunciation
+  never get a score in Phase 4** — vocabulary is represented by real
+  counts (encountered/reviewing/mastered) instead of an invented
+  percentage; the rest have no real evidence source yet from a text-only
+  lesson and must show "Not assessed yet," never a fabricated or zero
+  value, never silently omitted.
+- **Vocabulary memory**: normalized by `normalizeVocabularyCanonicalForm`
+  (lowercase/trim/collapse-whitespace — not lemmatization; a known,
+  documented limitation, not linguistic tooling). Sourced from
+  `lesson_sessions.summary.vocabulary` (already real per-lesson evidence)
+  — translation/example enrichment is a future extension, not fabricated
+  here. A word is `mastered` (`mastery_score = 100`) only after passing a
+  review at the final spaced-repetition stage — never after merely
+  appearing once.
+- **Spaced repetition** (`src/lib/languageBrain/spacedRepetition.ts`,
+  `computeNextReview`): fixed schedule, stage 1→2→3→4 = due
+  +1d/+3d/+7d/+30d on a successful ("good") review; stage 4 stays at
+  stage 4 (steady-state +30d) and keeps mastery. A failed ("again")
+  review **always resets to stage 1 / +1 day and clears mastery**,
+  regardless of the prior stage — simplest real rule, not SM-2. The
+  result model is the smallest real one for the current scope: pass/fail
+  (`'again' | 'good'`), since no interactive Review Mode UI exists yet.
+- **Review server-side foundation without a Review Mode UI**:
+  `recordReviewResultAction` (`src/features/languageBrain/actions.ts`) is
+  fully real, ownership-checked, and tested — it's just not wired to an
+  interactive flashcard screen yet, because that screen doesn't exist
+  (building a fake one would violate "don't create UI that pretends
+  behavior exists"). The dashboard/Language Brain view shows real due
+  counts/items only.
+- **Weak-area ranking** (`src/lib/languageBrain/dal.ts`,
+  `rankWeakAreas`): recurring first, then by occurrence count, then by
+  recency — a single one-off mistake can never outrank a genuinely
+  recurring pattern.
+- **Personalization hook, bounded** (`src/lib/languageBrain/personalization.ts`,
+  `buildLessonPersonalizationContext`): capped arrays (top 3 recurring
+  grammar patterns, 5 due vocabulary terms, 3 weak areas, 2 strengths —
+  `MAX_PERSONALIZATION_*` in `constants.ts`) woven into
+  `buildLessonSystemPrompt` (`src/lib/lessons/prompt.ts`) as a
+  reinforcement instruction: roughly 20–30% of the lesson, never the
+  whole thing, and the model is told not to invent history beyond what's
+  listed. Always built from the session's own trusted snapshot
+  (`user_id`/`target_language_code`) inside
+  `src/features/lessons/actions.ts`, the same trust boundary as every
+  other lesson-context field — never from client input, never from a
+  live profile re-read.
+- **Failure/retry**: ingestion failure never corrupts lesson completion
+  (already committed by the time ingestion runs) and is always retryable
+  via the self-healing sweep above — see "Ingestion pipeline."
+- **Extraction versioning**: `EXTRACTION_VERSION` in
+  `src/lib/languageBrain/constants.ts` (currently `"brain-v1"`), recorded
+  on every `language_brain_ingestions` row, same pattern as the lesson
+  engine's `prompt_version` and the placement test's `test_version`. No
+  reprocessing pipeline is built yet (out of scope for this phase); a
+  future version bump does not retroactively reinterpret old rows.
+- **Automated tests**: `src/lib/languageBrain/*.test.ts`,
+  `src/features/languageBrain/actions.test.ts`, plus lesson-engine tests
+  extended for the personalization hook
+  (`src/lib/lessons/prompt.test.ts`) and ingestion trigger
+  (`src/features/lessons/actions.test.ts`) — run with `npm run test`.
+  Deterministic logic (the grammar-score formula and its rounding/order-
+  independence properties in `scoring.test.ts`, spaced repetition,
+  weak-area ranking, AI-classification fallback, ingestion orchestration
+  — including that only THIS LESSON's raw grammar counts are ever sent,
+  never a prior-state read — and the review-result trust boundary) is
+  exercised directly. **What Vitest cannot prove**: that
+  `INSERT ... ON CONFLICT DO UPDATE`'s row-locking genuinely serializes
+  two truly concurrent ingestions for the same
+  `(user, target_language_code)` on live Postgres — that requires a real
+  database. See `0006_language_brain.sql`'s manual verification steps
+  (also in the Phase 4 delivery report) for the exact concurrent-ingestion
+  procedure to run once this migration is applied. RLS/grant/trigger
+  guarantees on the new tables are likewise not provable by Vitest and are
+  code-reviewed against the migration instead.
+
 ## Stack
 
 - Next.js 16 (App Router) + React 19, TypeScript strict mode.
@@ -221,13 +415,14 @@ own generation prompt.
 - Supabase Row Level Security is required on every table. No broad public
   SELECT/INSERT/UPDATE policies — scope everything to `auth.uid()`.
 - Never expose the Supabase service-role key to the browser, in a Client
-  Component, or via a `NEXT_PUBLIC_` variable. The AI lesson engine is
-  the one place this codebase uses it (`SUPABASE_SERVICE_ROLE_KEY` via
-  `src/lib/supabase/serviceRole.ts`), because `lesson_sessions`/
-  `lesson_messages` need writes no `auth.uid()`-scoped RLS policy could
-  make trustworthy — see the "AI lesson engine" section above before
-  reusing this client anywhere else or granting `authenticated` write
-  access to either table.
+  Component, or via a `NEXT_PUBLIC_` variable. The AI lesson engine and
+  the Language Brain are the only places this codebase uses it
+  (`SUPABASE_SERVICE_ROLE_KEY` via `src/lib/supabase/serviceRole.ts`),
+  because `lesson_sessions`/`lesson_messages` and every `language_brain_*`
+  table need writes no `auth.uid()`-scoped RLS policy could make
+  trustworthy — see the "AI lesson engine" and "Language Brain" sections
+  above before reusing this client anywhere else or granting
+  `authenticated` write access to any of these tables.
 - Never leak raw database or auth provider errors to users — return
   generic, safe messages (see `src/lib/utils/errors.ts`) and log details
   server-side only.

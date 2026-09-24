@@ -2,7 +2,15 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StartLessonButton } from "@/features/lessons/components/StartLessonButton";
+import { ROUTES } from "@/constants/routes";
 import styles from "./DashboardHome.module.css";
+
+export interface DashboardBrainSnapshot {
+  hasAnyEvidence: boolean;
+  dueReviewCount: number;
+  /** e.g. "grammar: past tense irregular verbs" — the single top weak area, if any. */
+  topFocusAreaLabel: string | null;
+}
 
 export interface DashboardHomeProps {
   displayName: string | null;
@@ -13,6 +21,9 @@ export interface DashboardHomeProps {
   teacherName: string | null;
   canStartLesson: boolean;
   activeLessonSessionId: string | null;
+  /** null when there's no target language selected yet — the Language
+   * Brain section then just shows the same empty state as no evidence. */
+  languageBrain: DashboardBrainSnapshot | null;
 }
 
 const QUICK_PRACTICE_TILES = ["Talk with AI", "Pronunciation", "Role Play"];
@@ -39,6 +50,7 @@ export function DashboardHome({
   teacherName,
   canStartLesson,
   activeLessonSessionId,
+  languageBrain,
 }: DashboardHomeProps) {
   const friendlyName = getFriendlyName(displayName, email);
   const greeting = friendlyName ? `${getGreeting()}, ${friendlyName}` : `${getGreeting()}!`;
@@ -96,12 +108,33 @@ export function DashboardHome({
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionHeading}>Language Brain</h2>
+        <div className={styles.sectionHeaderRow}>
+          <h2 className={styles.sectionHeading}>Language Brain</h2>
+          {languageBrain?.hasAnyEvidence && (
+            <Link href={ROUTES.languageBrain} className={styles.sectionLink}>
+              View all
+            </Link>
+          )}
+        </div>
         <Card>
-          <p className={styles.mutedText}>
-            Your personalized review patterns and streaks will appear here once
-            lessons launch.
-          </p>
+          {!languageBrain || !languageBrain.hasAnyEvidence ? (
+            <p className={styles.mutedText}>Complete lessons to build your Language Brain.</p>
+          ) : (
+            <div className={styles.brainSummaryRow}>
+              <div>
+                <p className={styles.brainStatNumber}>{languageBrain.dueReviewCount}</p>
+                <p className={styles.brainStatLabel}>
+                  {languageBrain.dueReviewCount === 1 ? "item due for review" : "items due for review"}
+                </p>
+              </div>
+              {languageBrain.topFocusAreaLabel && (
+                <div>
+                  <p className={styles.brainStatLabel}>Top focus area</p>
+                  <p className={styles.brainFocusText}>{languageBrain.topFocusAreaLabel}</p>
+                </div>
+              )}
+            </div>
+          )}
         </Card>
       </section>
     </div>
