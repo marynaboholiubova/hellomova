@@ -17,10 +17,14 @@ goal → placement test → CEFR result → personal plan → AI teacher →
 dashboard); Phase 3 added the real AI lesson engine (one mode — General AI
 Lesson, text-only); Phase 4 added the Language Brain (durable, per-user
 + per-target-language cross-session learning memory derived from
-completed lessons). Do not implement future phases (voice, pronunciation
-scoring/memory, listening scoring, an interactive Review Mode UI,
-Business/Career/Kids Language Brain, Business Course, career tools,
-billing, multilingual content) without explicit instruction.
+completed lessons); Phase 5 added CEFR Assessment v2 (durable,
+policy-gated confirmed-vs-learning-level architecture, item versioning,
+and skill-specific evidence — see below). Do not implement future phases
+(voice, pronunciation scoring/memory, listening scoring, an interactive
+Review Mode UI, an interactive CEFR Assessment-taking UI beyond the
+read-only status view, Business/Career/Kids Language Brain, Business
+Course, career tools, billing, multilingual content) without explicit
+instruction.
 
 `src/constants/languages.ts` holds HelloMova's real, finalized 50-language
 launch catalog (with the 5 Arabic dialects modeled as `variantOf: "ar"`).
@@ -391,6 +395,324 @@ languages gets two fully isolated memories — every query filters by both
   guarantees on the new tables are likewise not provable by Vitest and are
   code-reviewed against the migration instead.
 
+### CEFR Assessment v2 (Phase 5)
+
+**Confirmed level ≠ learning level.** A learner may already be studying
+B2 material while their formally confirmed HelloMova assessment level is
+still B1. `user_languages` now has three level-ish columns, each with a
+distinct, non-interchangeable meaning:
+- `current_cefr_level` — **unchanged historical meaning**: placement v1's
+  estimated result. Never removed, never redefined.
+- `learning_cefr_level` — the current study-reference level (backfilled
+  from `current_cefr_level` at migration time; going forward maintained
+  by the personal-plan/lesson surfaces, not by this phase or by Language
+  Brain).
+- `confirmed_cefr_level` — **only ever set by a real, policy-gated
+  `level_confirmation` assessment outcome.** Backfilled to `NULL` for
+  every existing user, including ones with a v1 estimate — a v1 estimate
+  is explicitly not a confirmed multi-skill result (see
+  `src/app/(onboarding)/onboarding/result/page.tsx`, which already says
+  so in its own copy). Since no confirmation policy is active (see
+  below), this column is `NULL` for every user today, old or new, and
+  will stay that way until a human activates one.
+- `assessment_status` (`unassessed` | `estimated` | `confirmed`) — a
+  quick per-language summary, backfilled from whether `current_cefr_level`
+  was set.
+
+**`confirmed_cefr_level`/`learning_cefr_level`/`assessment_status` are
+locked against `authenticated`/`anon` at the PRIVILEGE level, not just
+governed by convention — and this required removing a table-level grant,
+not just adding a column-level revoke.** `user_languages` predates this
+migration; 0001_init.sql through 0006_language_brain.sql never issue a
+single `grant`/`revoke` against it, so `authenticated`/`anon` hold
+Supabase's default **table-level** INSERT/UPDATE/DELETE/SELECT on it, on
+top of 0001_init.sql's row-owner-scoped RLS policies (`auth.uid() =
+user_id`). RLS cannot narrow this to specific columns — it governs which
+ROWS a statement may touch, not which COLUMNS within an allowed row it
+may set.
+
+An earlier draft of this migration tried to close the gap with a
+column-level-only `revoke insert (col...), update (col...) ...
+from authenticated, anon` on just the three trusted columns, leaving the
+existing table-level grant untouched. **That is a no-op and does not
+work**: Postgres computes column-write eligibility as the UNION of
+table-level and column-level privilege, so a role holding the
+table-level INSERT/UPDATE grant can still write any column regardless of
+what a column-level revoke says — the table-level grant alone remains
+sufficient on its own. The actual fix has to narrow FROM a table-level
+grant: `revoke insert, update on user_languages from authenticated, anon`
+(removing the broad grant entirely — SELECT/DELETE untouched), followed
+by re-granting column-level INSERT on exactly `(user_id,
+target_language_code, is_primary)` and column-level UPDATE on exactly
+`(user_id, target_language_code, is_primary, current_cefr_level)` to
+`authenticated` — the real, exact column set
+`src/features/onboarding/actions.ts`'s two write paths use (verified
+against the live source and locked in by
+`src/features/onboarding/actions.test.ts`), including `user_id`/
+`target_language_code` in the UPDATE grant because PostgREST's generated
+`ON CONFLICT (...) DO UPDATE SET` for the onboarding upsert assigns every
+inserted column to `excluded.<column>`, conflict-key columns included.
+`confirmed_cefr_level`/`learning_cefr_level`/`assessment_status` are
+absent from every grant, and with the table-level grant gone there is no
+other way for `authenticated`/`anon` to reach them — only `service_role`
+(which bypasses privilege checks the same way it bypasses RLS) can write
+them, and only via this migration's own SQL functions.
+`0007_cefr_assessment_v2.sql` includes a read-only
+`has_table_privilege`/`has_column_privilege` verification query
+immediately after these grants — the actual, checkable proof of this,
+not just a description of the grant statements.
+
+**Language Brain predicts readiness. Assessment confirms level. Language
+Brain can never promote a confirmed level, structurally, not by
+convention.** No function in `0007_cefr_assessment_v2.sql` ever writes a
+non-null `confirmed_cefr_level` or `cefr_skill_states.confirmed_level` —
+doing so honestly requires an ACTIVE row in `assessment_policy_versions`
+for `level_confirmation`, and this migration inserts none. Completing
+lessons can never, by itself, convert a confirmed B1 into a confirmed B2.
+
+- **Data model** (`supabase/migrations/0007_cefr_assessment_v2.sql`):
+  `assessment_policy_versions` (the policy registry — see below),
+  `writing_rubric_versions` (a fixed, versioned writing rubric),
+  `assessment_items` (stable question identity: language/skill/CEFR
+  target) + `assessment_item_versions` (the actual versioned
+  prompt/options/answer-key/rubric-binding — a content revision creates a
+  NEW version, never edits history), `language_assessments` (one row per
+  attempt), `assessment_responses` (one placeholder row per served item,
+  mutable only while the parent assessment is `in_progress`, then
+  structurally immutable forever — even against `service_role`),
+  `writing_evaluations` (AI-produced, rubric-bound, Zod-validated
+  criterion evidence), `assessment_skill_results` (one row per
+  attempt+skill, immutable), `cefr_skill_states` (the learner's
+  cumulative per-skill profile — "Skill Profile"), `level_readiness_states`
+  (Language-Brain-derived readiness EVIDENCE, never a verdict),
+  `bridge_plans` + `bridge_plan_targets` (targeted remediation linked to
+  real Language Brain/assessment gaps, never a generic "study more").
+- **Skill model, no CHECK constraint on `skill`** — matches
+  `lesson_sessions.mode`'s precedent: the six primary domains (grammar,
+  vocabulary, reading, listening, writing, speaking) plus pronunciation
+  are the live set in `src/lib/assessment/constants.ts`'s Zod enum,
+  chosen so future CEFR-aligned domains (spoken/written interaction,
+  mediation, sociolinguistic/pragmatic competence) never need a
+  migration. `ASSESSABLE_SKILLS_TODAY` (grammar, vocabulary, reading,
+  writing) is the actually-assessable-from-text subset — listening,
+  speaking, and pronunciation are schema-supported but **no code path in
+  this phase ever produces evidence for them.**
+- **Item versioning is mandatory and enforced structurally.**
+  `assessment_responses.item_version_id` is fixed the instant a response
+  placeholder is created, before an answer even exists — a later content
+  revision (new `assessment_item_versions` row, old one retired) can
+  never retroactively change what a historical response was scored
+  against. `assessment_items`/`assessment_item_versions` have **no select
+  policy for `authenticated`/`anon` at all** (not just no write policy) —
+  the MCQ answer key and rubric binding live there and must never reach
+  the browser via any path; read only via `service_role`, with the server
+  stripping the answer key before ever handing item content to a client
+  (mirrors `src/lib/placement/questions.ts`'s `toPublicQuestion()`).
+  Versioned content is also structurally immutable once it leaves
+  `draft`: a trigger on `assessment_item_versions` rejects any change to
+  `item_id`/`version_number`/`item_type`/`prompt`/`answer_key`/
+  `rubric_version_id`/`difficulty_band` once status is `reviewed`,
+  `active`, or `retired`, and only allows the forward lifecycle
+  `draft → reviewed → active → retired` (or `draft → active` directly —
+  review is optional, not mandatory). The same pattern protects
+  `writing_rubric_versions.criteria`/`version_label` once out of `draft`
+  (lifecycle `draft → active → retired`) and
+  `assessment_policy_versions.rules`/`policy_area`/`version_label` once
+  out of `draft` (same lifecycle) — a rubric or policy that has ever
+  governed a real outcome must stay auditable, never silently rewritten
+  in place; a content revision is always a new version row.
+  `language_assessments` itself protects `source_cefr_level` as
+  identity (immutable from creation) and treats
+  `target_cefr_level`/`policy_version_id`/`submitted_at`/`completed_at`
+  as write-once (settable from `NULL`, never changeable afterward) for
+  the same auditability reason.
+- **Cross-language and empty-attempt guards inside `cefr_v2_create_assessment`.**
+  Item selection (`src/lib/assessment/itemSelection.ts`) already filters
+  by `target_language_code`, but the SQL function does not trust that: it
+  independently re-checks each served item version's own
+  `assessment_items.target_language_code` against the assessment's
+  `target_language_code` and rolls back the whole attempt (including the
+  just-inserted `language_assessments` row) if they ever disagree, and it
+  rejects an empty/`null` item-version list outright before writing
+  anything — a zero-item "completed" assessment would be meaningless.
+- **Mixed-CEFR-band evidence is left honestly unresolved, never guessed.**
+  `cefr_v2_submit_assessment` groups a skill's answered items by CEFR
+  band; it only resolves one `estimated_level` when every answered item
+  for that skill in the attempt shares exactly one band
+  (`count(distinct cefr_target) = 1`) — never by picking an arbitrary row
+  (the removed `limit 1` this replaced could silently depend on
+  unspecified row order). When a skill's evidence spans more than one
+  band — not possible via today's single-band item selection, but the
+  architecture anticipates a future boundary/adaptive selector — the
+  function records the real `raw_score`/`items_administered`/
+  `items_correct` evidence but leaves `estimated_level` `NULL` rather
+  than averaging across bands (which `src/lib/assessment/scoring.ts`'s
+  `resolveSkillEstimatedLevel` mirrors and is tested for row-order
+  independence).
+- **`cefr_v2_finalize_writing_skill` derives its own evidence counts,
+  never trusts the caller's.** It no longer accepts
+  `p_items_administered`/`p_items_evaluated` as parameters at all — it
+  counts the assessment's own persisted writing `assessment_responses`
+  and `writing_evaluations` rows itself and refuses to complete
+  (`raise exception`) unless every administered writing response
+  genuinely has a real evaluation, plus range-checks `p_raw_score` (the
+  one number it cannot re-derive without duplicating
+  `computeWritingRawScore`'s criterion-averaging a second time in SQL).
+  `src/lib/assessment/submit.ts` also no longer discards this RPC's error
+  silently — a rejection is logged and the assessment stays `evaluating`
+  for a later retry, rather than a fire-and-forget call hiding a real
+  failure.
+- **Legacy placement v1 is untouched and un-promoted.** Its bank
+  (`src/lib/placement/banks/{en,fr}.ts`), scoring
+  (`src/lib/placement/scoring.ts`), and historical
+  `placement_test_attempts` rows are unchanged. v1's per-item metadata
+  (category → skill, level → cefr_target, prompt/options, answer key)
+  maps losslessly to v2's shape — see
+  `src/lib/assessment/legacyImport.ts`'s `mapLegacyPlacementBankToV2Items`
+  (pure mapping function, tested against the real `en` bank). **This
+  function does not write to the database** — actually seeding v2 with
+  this (or any) content is a deliberate, separate, human-reviewed step,
+  not a side effect of a migration or of running the app. Until that
+  happens, every language's v2 item bank is genuinely empty, so
+  `startAssessmentAction` honestly reports "not available yet" for every
+  language today — the same fail-closed contract v1's
+  `getPlacementBank()` already uses for languages with no bank.
+- **The v1 MCQ evidence-gate is carried forward, not reinvented.**
+  `src/lib/assessment/constants.ts`'s `SKILL_PASS_THRESHOLD` (2/3) is the
+  exact same `PASS_THRESHOLD` `src/lib/placement/scoring.ts` already uses
+  — a skill is "estimated" at a level only when at least 2/3 of that
+  skill's items in one attempt are correct. `cefr_v2_submit_assessment`
+  applies this per skill (not blended); `src/lib/assessment/scoring.ts`'s
+  `isSkillEvidencePassing`/`computeSkillRawScore` mirror the SQL formula
+  for documentation/testing, same "mirror, not drive" relationship
+  `languageBrain/scoring.ts` has with its generated column.
+- **No simple average, ever, for a CONFIRMATION decision.** Per-skill
+  results are never blended into one number to decide a confirmed level.
+  "Confirmed level = highest level for which required domains meet the
+  relevant minimum requirements AND overall evidence is sufficient" is
+  the product concept — but the exact thresholds are undefined (see
+  below), so no code computes this at all yet.
+- **Writing assessment is real, not faked, and not confirmation-capable.**
+  `src/lib/assessment/writingEvaluation.ts` calls the existing OpenAI
+  provider with a fixed, versioned rubric (`writing_rubric_versions`),
+  structured Zod-validated output
+  (`WritingEvaluationOutputSchema` — exactly the rubric's own criterion
+  keys, nothing else: no CEFR level, no pass/fail, no user id, no policy
+  version), prompt-injection-resistant instructions (the learner's text
+  is untrusted content to evaluate, never instructions to follow — same
+  posture as the lesson engine's system prompt). A response that fails
+  validation or doesn't cover exactly the rubric's criteria is rejected
+  as a whole — there is no partial/fake fallback score, unlike Language
+  Brain's error classification (categorization has a safe deterministic
+  fallback; writing evaluation genuinely cannot). Failure surfaces as the
+  assessment's real `'failed'` lifecycle state, retryable via
+  `src/lib/assessment/submit.ts`'s orchestration
+  (`evaluateAndFinalizeWriting`), which mirrors
+  `languageBrain/ingest.ts`'s retry-safe pattern closely.
+- **Listening and speaking stay `NULL`, always, in this phase.** No real
+  audio/microphone pipeline exists. `cefr_skill_states` simply has no row
+  for these skills for anyone — the UI (`AssessmentView`) shows "Not
+  assessed yet," never a zero, never an inferred score from text.
+- **C2 safeguard**: `assessment_items.cefr_target`/`assessment_skill_results.estimated_level`/
+  `cefr_skill_states.estimated_level`/`confirmed_level` all CHECK-constrain
+  to A1–C2, so the schema doesn't block C2 — but nothing in this phase's
+  application code ever credits C2 from a short MCQ set (same reasoning
+  placement v1 already applies), and full C2 CONFIRMATION additionally
+  requires the (currently nonexistent) `level_confirmation` policy.
+- **Readiness architecture, no readiness decision.**
+  `src/lib/assessment/readiness.ts`'s `computeReadinessEvidenceSnapshot`
+  deterministically aggregates REAL Language Brain evidence (grammar
+  score/evidence count, due review count, recurring-error count, lessons
+  ingested) into `level_readiness_states` — facts, never a verdict.
+  `status` is hardcoded to `'readiness_pending'` in every code path; the
+  database CHECK also allows `'ready'`/`'almost_ready'`/`'not_ready_yet'`
+  so a future policy-aware decision algorithm doesn't need a migration,
+  but nothing today is capable of writing those values.
+- **Policy registry, deliberately empty**
+  (`assessment_policy_versions`, `src/lib/assessment/policy.ts`). Every
+  gate that could promote/confirm something calls
+  `getActivePolicy(policyArea)` first; a `null` result (the only result
+  today, for every area) means "no legitimate decision can be made yet" —
+  never substitute a guessed threshold. **Do not insert a placeholder
+  "active" policy with invented numbers to make something "work."**
+  Undefined thresholds, deliberately, until a human explicitly decides
+  them: minimum evidence volume per skill, minimum skill score, which
+  skills are required for confirmation, cross-skill requirements,
+  READY/ALMOST_READY/NOT_READY_YET boundaries, evidence recency window,
+  reassessment interval, bridge-plan completion criteria. When one of
+  these is decided, a human authors and activates a real
+  `assessment_policy_versions` row (SQL, or a future admin tool) — no
+  code change is needed here for it to take effect.
+- **Idempotency & concurrency**: `language_assessments.status` moves
+  through a fixed lifecycle (`in_progress → submitted →
+  [evaluating] → completed | failed`, or `→ abandoned`) enforced by a
+  structural trigger even against `service_role`.
+  `cefr_v2_submit_assessment`/`cefr_v2_finalize_writing_skill` both take
+  a `for update` row lock and check-then-transition status, so two
+  concurrent submit/finalize calls can never double-count skill evidence
+  or double-confirm anything — the second call sees the already-advanced
+  status and no-ops. `assessment_responses` has a unique
+  `(assessment_id, item_id)` constraint and becomes fully immutable the
+  instant its parent assessment leaves `in_progress`, via a trigger that
+  reads the parent's live status on every update attempt.
+- **Security/write model** — same threat model as Phase 3/4: browser and
+  server share the same `authenticated` credential, so
+  `authenticated`/`anon` get an explicit `revoke` (not just "no policy")
+  on every write to every table in this migration. All writes go through
+  four focused SQL functions (`cefr_v2_create_assessment`,
+  `cefr_v2_record_response`, `cefr_v2_submit_assessment`,
+  `cefr_v2_finalize_writing_skill`), granted execute **only** to
+  `service_role`. `service_role` is used in exactly one new module,
+  `src/lib/assessment/submit.ts` (plus `itemSelection.ts`/`readiness.ts`
+  reading answer-key-bearing or derived-state tables) — never in a Client
+  Component, never `NEXT_PUBLIC_`. Reads stay on the ordinary per-request
+  RLS client (`src/lib/assessment/dal.ts`, `policy.ts`) wherever the data
+  is the learner's own evidence.
+- **Routes/UI**: one new dashboard route, `/dashboard/assessment`
+  (`src/app/(dashboard)/dashboard/assessment/page.tsx`,
+  `src/features/assessment/components/AssessmentView.tsx`) — a real,
+  read-only view of confirmed/learning level, skill profile, assessment
+  history, and bridge plans, plus a genuinely working (not fake) "Start
+  CEFR Assessment" button that currently always reports "not available
+  yet" (no v2 content seeded — see legacy import above). The dashboard
+  header tag now says "Estimated B1" or "Confirmed B1" instead of a bare,
+  ambiguous level. No existing onboarding route or step was touched.
+- **Automated tests**: `src/lib/assessment/*.test.ts`,
+  `src/features/assessment/actions.test.ts`,
+  `src/features/onboarding/actions.test.ts` — run with `npm run test`.
+  Deterministic logic (evidence-gate math, mixed-CEFR-band evidence
+  resolution and its row-order independence in
+  `scoring.test.ts`'s `resolveSkillEstimatedLevel` suite, item selection
+  bounding and language/skill isolation, legacy mapping losslessness,
+  AI-writing-evaluation schema/coverage validation and prompt-injection
+  resistance, submit/finalize idempotency and retry-safety — including
+  that the finalize RPC's own rejection is logged rather than silently
+  discarded, and that it is called without
+  `p_items_administered`/`p_items_evaluated` — DAL language isolation,
+  that Server Actions accept no field through which a client could set a
+  trusted score/level, and that onboarding's own `user_languages`
+  upsert/update payloads never include `confirmed_cefr_level`/
+  `learning_cefr_level`/`assessment_status`) is exercised directly.
+  **What Vitest cannot prove**: live Postgres row-locking under true
+  concurrency, RLS/grant enforcement (including the table-level revoke
+  plus column-level re-grant on `user_languages` — see the
+  `has_table_privilege`/`has_column_privilege` verification query in
+  `0007_cefr_assessment_v2.sql` for the actual, checkable proof), and
+  trigger behavior — including the item-version/rubric/policy content-
+  immutability triggers, the cross-language and empty-item-list guards in
+  `cefr_v2_create_assessment`, and `cefr_v2_finalize_writing_skill`'s own
+  evidence-count derivation — code-reviewed against
+  `0007_cefr_assessment_v2.sql` instead.
+  `supabase/verify_0007_cefr_assessment_v2.sql` is the actual runnable
+  check for all of this: a single transaction (rolled back at the end,
+  leaves no trace) that must be run with a direct Postgres connection
+  (Supabase SQL editor or `psql` — not the REST/PostgREST API, which
+  can't run arbitrary multi-statement SQL or `set local role`) against a
+  project 0007 has already been applied to. It exercises privilege
+  enforcement by actually impersonating an authenticated user via JWT
+  claims, not just reading grant statements, and covers items 1–14 of the
+  Phase 5 hardening report's manual verification list.
+
 ## Stack
 
 - Next.js 16 (App Router) + React 19, TypeScript strict mode.
@@ -415,14 +737,18 @@ languages gets two fully isolated memories — every query filters by both
 - Supabase Row Level Security is required on every table. No broad public
   SELECT/INSERT/UPDATE policies — scope everything to `auth.uid()`.
 - Never expose the Supabase service-role key to the browser, in a Client
-  Component, or via a `NEXT_PUBLIC_` variable. The AI lesson engine and
-  the Language Brain are the only places this codebase uses it
-  (`SUPABASE_SERVICE_ROLE_KEY` via `src/lib/supabase/serviceRole.ts`),
-  because `lesson_sessions`/`lesson_messages` and every `language_brain_*`
-  table need writes no `auth.uid()`-scoped RLS policy could make
-  trustworthy — see the "AI lesson engine" and "Language Brain" sections
-  above before reusing this client anywhere else or granting
-  `authenticated` write access to any of these tables.
+  Component, or via a `NEXT_PUBLIC_` variable. The AI lesson engine, the
+  Language Brain, and CEFR Assessment v2 are the only places this
+  codebase uses it (`SUPABASE_SERVICE_ROLE_KEY` via
+  `src/lib/supabase/serviceRole.ts`), because `lesson_sessions`/
+  `lesson_messages`, every `language_brain_*` table, and every CEFR v2
+  table (`language_assessments`, `assessment_responses`,
+  `assessment_items`/`assessment_item_versions`, etc.) need writes — and,
+  for the two item tables, even reads — no `auth.uid()`-scoped RLS policy
+  could make trustworthy — see the "AI lesson engine," "Language Brain,"
+  and "CEFR Assessment v2" sections above before reusing this client
+  anywhere else or granting `authenticated` write (or, for item tables,
+  read) access to any of these tables.
 - Never leak raw database or auth provider errors to users — return
   generic, safe messages (see `src/lib/utils/errors.ts`) and log details
   server-side only.

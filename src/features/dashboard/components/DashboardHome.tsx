@@ -12,11 +12,22 @@ export interface DashboardBrainSnapshot {
   topFocusAreaLabel: string | null;
 }
 
+export interface DashboardLevelSummary {
+  /** Only ever non-null once a real, policy-gated level_confirmation
+   * assessment has passed — see AGENTS.md's CEFR v2 section. Never
+   * copied from a legacy v1 estimate. */
+  confirmedCefrLevel: string | null;
+  /** The learner's current estimated/study-reference level — backfilled
+   * from legacy placement v1's result, or set by a later CEFR v2
+   * initial_placement. Explicitly labeled "Estimated," never "Confirmed." */
+  learningCefrLevel: string | null;
+}
+
 export interface DashboardHomeProps {
   displayName: string | null;
   email: string | null;
   targetLanguageName: string | null;
-  cefrLevel: string | null;
+  levels: DashboardLevelSummary | null;
   goalLabel: string | null;
   teacherName: string | null;
   canStartLesson: boolean;
@@ -24,6 +35,16 @@ export interface DashboardHomeProps {
   /** null when there's no target language selected yet — the Language
    * Brain section then just shows the same empty state as no evidence. */
   languageBrain: DashboardBrainSnapshot | null;
+}
+
+function formatLevelTag(levels: DashboardLevelSummary | null): string {
+  if (levels?.confirmedCefrLevel) {
+    return `Confirmed ${levels.confirmedCefrLevel}`;
+  }
+  if (levels?.learningCefrLevel) {
+    return `Estimated ${levels.learningCefrLevel}`;
+  }
+  return "Not yet assessed";
 }
 
 const QUICK_PRACTICE_TILES = ["Talk with AI", "Pronunciation", "Role Play"];
@@ -45,7 +66,7 @@ export function DashboardHome({
   displayName,
   email,
   targetLanguageName,
-  cefrLevel,
+  levels,
   goalLabel,
   teacherName,
   canStartLesson,
@@ -60,9 +81,14 @@ export function DashboardHome({
       <div>
         <h1 className={styles.heading}>{greeting}</h1>
         {targetLanguageName && (
-          <p className={styles.tag}>
-            {targetLanguageName} • {cefrLevel ?? "Not yet assessed"}
-          </p>
+          <>
+            <p className={styles.tag}>
+              {targetLanguageName} • {formatLevelTag(levels)}
+            </p>
+            <Link href={ROUTES.assessment} className={styles.sectionLink}>
+              View level details
+            </Link>
+          </>
         )}
       </div>
 

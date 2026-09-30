@@ -4,6 +4,7 @@ export const ROUTES = {
   signup: "/signup",
   dashboard: "/dashboard",
   languageBrain: "/dashboard/language-brain",
+  assessment: "/dashboard/assessment",
   onboardingNativeLanguage: "/onboarding/native-language",
   onboardingTargetLanguage: "/onboarding/target-language",
   onboardingGoal: "/onboarding/goal",

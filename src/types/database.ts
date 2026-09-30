@@ -37,6 +37,40 @@ export type Database = {
         };
         Returns: boolean;
       };
+      cefr_v2_create_assessment: {
+        Args: {
+          p_user_id: string;
+          p_target_language_code: string;
+          p_assessment_type: string;
+          p_source_cefr_level: string | null;
+          p_item_version_ids: string[];
+        };
+        Returns: string;
+      };
+      cefr_v2_record_response: {
+        Args: {
+          p_response_id: string;
+          p_user_id: string;
+          p_selected_option_id: string | null;
+          p_written_response: string | null;
+        };
+        Returns: boolean;
+      };
+      cefr_v2_submit_assessment: {
+        Args: {
+          p_assessment_id: string;
+          p_user_id: string;
+        };
+        Returns: unknown;
+      };
+      cefr_v2_finalize_writing_skill: {
+        Args: {
+          p_assessment_id: string;
+          p_user_id: string;
+          p_raw_score: number;
+        };
+        Returns: unknown;
+      };
     };
     Tables: {
       profiles: {
@@ -77,6 +111,11 @@ export type Database = {
           target_language_code: string;
           current_cefr_level: string | null;
           is_primary: boolean;
+          // CEFR v2 additions (0007) — see that migration's header for
+          // the full confirmed/learning/estimated backfill reasoning.
+          confirmed_cefr_level: string | null;
+          learning_cefr_level: string | null;
+          assessment_status: string;
           created_at: string;
           updated_at: string;
         };
@@ -86,11 +125,17 @@ export type Database = {
           target_language_code: string;
           current_cefr_level?: string | null;
           is_primary?: boolean;
+          confirmed_cefr_level?: string | null;
+          learning_cefr_level?: string | null;
+          assessment_status?: string;
         };
         Update: {
           target_language_code?: string;
           current_cefr_level?: string | null;
           is_primary?: boolean;
+          confirmed_cefr_level?: string | null;
+          learning_cefr_level?: string | null;
+          assessment_status?: string;
         };
         Relationships: [];
       };
@@ -401,6 +446,349 @@ export type Database = {
           error_message?: string | null;
           attempt_count?: number;
           completed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      assessment_policy_versions: {
+        Row: {
+          id: string;
+          policy_area: string;
+          version_label: string;
+          status: string;
+          rules: unknown;
+          created_at: string;
+          updated_at: string;
+          activated_at: string | null;
+          retired_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          policy_area: string;
+          version_label: string;
+          status?: string;
+          rules: unknown;
+          activated_at?: string | null;
+          retired_at?: string | null;
+        };
+        Update: {
+          status?: string;
+          rules?: unknown;
+          activated_at?: string | null;
+          retired_at?: string | null;
+        };
+        Relationships: [];
+      };
+      writing_rubric_versions: {
+        Row: {
+          id: string;
+          version_label: string;
+          criteria: unknown;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          version_label: string;
+          criteria: unknown;
+          status?: string;
+        };
+        Update: {
+          status?: string;
+          criteria?: unknown;
+        };
+        Relationships: [];
+      };
+      assessment_items: {
+        Row: {
+          id: string;
+          target_language_code: string;
+          skill: string;
+          subskill: string | null;
+          cefr_target: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          target_language_code: string;
+          skill: string;
+          subskill?: string | null;
+          cefr_target: string;
+        };
+        Update: {
+          subskill?: string | null;
+        };
+        Relationships: [];
+      };
+      assessment_item_versions: {
+        Row: {
+          id: string;
+          item_id: string;
+          version_number: number;
+          item_type: string;
+          prompt: unknown;
+          answer_key: unknown | null;
+          rubric_version_id: string | null;
+          difficulty_band: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          item_id: string;
+          version_number: number;
+          item_type: string;
+          prompt: unknown;
+          answer_key?: unknown | null;
+          rubric_version_id?: string | null;
+          difficulty_band?: string | null;
+          status?: string;
+        };
+        Update: {
+          status?: string;
+          difficulty_band?: string | null;
+        };
+        Relationships: [];
+      };
+      language_assessments: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          assessment_type: string;
+          source_cefr_level: string | null;
+          target_cefr_level: string | null;
+          status: string;
+          policy_version_id: string | null;
+          started_at: string | null;
+          submitted_at: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          assessment_type: string;
+          source_cefr_level?: string | null;
+          status?: string;
+          started_at?: string | null;
+        };
+        Update: {
+          status?: string;
+          target_cefr_level?: string | null;
+          policy_version_id?: string | null;
+          submitted_at?: string | null;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      assessment_responses: {
+        Row: {
+          id: string;
+          assessment_id: string;
+          user_id: string;
+          item_id: string;
+          item_version_id: string;
+          skill: string;
+          selected_option_id: string | null;
+          written_response: string | null;
+          is_correct: boolean | null;
+          responded_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          assessment_id: string;
+          user_id: string;
+          item_id: string;
+          item_version_id: string;
+          skill: string;
+        };
+        // Immutable via triggers once the parent assessment leaves
+        // in_progress — see 0007_cefr_assessment_v2.sql.
+        Update: {
+          selected_option_id?: string | null;
+          written_response?: string | null;
+          is_correct?: boolean | null;
+          responded_at?: string | null;
+        };
+        Relationships: [];
+      };
+      writing_evaluations: {
+        Row: {
+          id: string;
+          response_id: string;
+          user_id: string;
+          rubric_version_id: string;
+          criterion_results: unknown;
+          ai_model: string | null;
+          evaluated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          response_id: string;
+          user_id: string;
+          rubric_version_id: string;
+          criterion_results: unknown;
+          ai_model?: string | null;
+        };
+        // Immutable record — no code path updates a writing evaluation.
+        Update: {
+          criterion_results?: unknown;
+        };
+        Relationships: [];
+      };
+      assessment_skill_results: {
+        Row: {
+          id: string;
+          assessment_id: string;
+          user_id: string;
+          skill: string;
+          is_assessed: boolean;
+          items_administered: number;
+          items_correct: number | null;
+          raw_score: number | null;
+          estimated_level: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          assessment_id: string;
+          user_id: string;
+          skill: string;
+          is_assessed?: boolean;
+          items_administered?: number;
+          items_correct?: number | null;
+          raw_score?: number | null;
+          estimated_level?: string | null;
+        };
+        // Immutable record — no code path updates a skill result.
+        Update: {
+          raw_score?: number | null;
+        };
+        Relationships: [];
+      };
+      cefr_skill_states: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          skill: string;
+          status: string;
+          estimated_level: string | null;
+          confirmed_level: string | null;
+          last_assessment_id: string | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          skill: string;
+          status?: string;
+          estimated_level?: string | null;
+          confirmed_level?: string | null;
+          last_assessment_id?: string | null;
+        };
+        Update: {
+          status?: string;
+          estimated_level?: string | null;
+          confirmed_level?: string | null;
+          last_assessment_id?: string | null;
+        };
+        Relationships: [];
+      };
+      level_readiness_states: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          candidate_target_level: string;
+          status: string;
+          evidence_snapshot: unknown;
+          policy_version_id: string | null;
+          computed_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          candidate_target_level: string;
+          status?: string;
+          evidence_snapshot: unknown;
+          policy_version_id?: string | null;
+          computed_at?: string;
+        };
+        Update: {
+          status?: string;
+          evidence_snapshot?: unknown;
+          policy_version_id?: string | null;
+          computed_at?: string;
+        };
+        Relationships: [];
+      };
+      bridge_plans: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          source_level: string;
+          target_level: string;
+          status: string;
+          created_from_assessment_id: string | null;
+          policy_version_id: string | null;
+          created_at: string;
+          updated_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          source_level: string;
+          target_level: string;
+          status?: string;
+          created_from_assessment_id?: string | null;
+          policy_version_id?: string | null;
+        };
+        Update: {
+          status?: string;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      bridge_plan_targets: {
+        Row: {
+          id: string;
+          bridge_plan_id: string;
+          skill: string;
+          gap_description: string;
+          source_type: string;
+          source_id: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          bridge_plan_id: string;
+          skill: string;
+          gap_description: string;
+          source_type: string;
+          source_id?: string | null;
+          status?: string;
+        };
+        Update: {
+          status?: string;
         };
         Relationships: [];
       };

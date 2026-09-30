@@ -2,7 +2,12 @@ import { verifySession } from "@/lib/auth/dal";
 import { getOnboardingProfile, getPrimaryUserLanguage } from "@/lib/onboarding/dal";
 import { getActiveLessonSession } from "@/lib/lessons/dal";
 import { getLanguageBrainSummary } from "@/lib/languageBrain/dal";
-import { DashboardHome, type DashboardBrainSnapshot } from "@/features/dashboard/components/DashboardHome";
+import { getUserLanguageLevels } from "@/lib/assessment/dal";
+import {
+  DashboardHome,
+  type DashboardBrainSnapshot,
+  type DashboardLevelSummary,
+} from "@/features/dashboard/components/DashboardHome";
 import { getLanguageByCode } from "@/constants/languages";
 import { getGoalByCode } from "@/constants/goals";
 import { getTeacherById } from "@/constants/teachers";
@@ -20,6 +25,7 @@ export default async function DashboardPage() {
   const teacher = profile.selectedTeacherId ? getTeacherById(profile.selectedTeacherId) : null;
 
   let languageBrain: DashboardBrainSnapshot | null = null;
+  let levels: DashboardLevelSummary | null = null;
   if (primaryLanguage) {
     const summary = await getLanguageBrainSummary(primaryLanguage.targetLanguageCode);
     const topFocusArea = summary.weakAreas[0] ?? null;
@@ -30,6 +36,12 @@ export default async function DashboardPage() {
         ? `${topFocusArea.category.replace(/_/g, " ")}: ${topFocusArea.patternKey.replace(/-/g, " ")}`
         : null,
     };
+
+    const languageLevels = await getUserLanguageLevels(primaryLanguage.targetLanguageCode);
+    levels = {
+      confirmedCefrLevel: languageLevels?.confirmedCefrLevel ?? null,
+      learningCefrLevel: languageLevels?.learningCefrLevel ?? primaryLanguage.currentCefrLevel ?? null,
+    };
   }
 
   return (
@@ -37,7 +49,7 @@ export default async function DashboardPage() {
       displayName={profile.displayName}
       email={user.email ?? null}
       targetLanguageName={targetLanguage?.name ?? null}
-      cefrLevel={primaryLanguage?.currentCefrLevel ?? null}
+      levels={levels}
       goalLabel={goal?.label ?? null}
       teacherName={teacher?.name ?? null}
       canStartLesson={Boolean(primaryLanguage)}

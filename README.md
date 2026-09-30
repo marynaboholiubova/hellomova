@@ -1,12 +1,15 @@
 # HelloMova
 
 HelloMova is a premium AI language-learning platform. This repository is
-currently at **Phase 4: Language Brain**, on top of Phase 1 (security/
-auth/database foundation), Phase 2 (onboarding), and Phase 3 (the AI
-lesson engine). Voice, pronunciation coaching/scoring, listening scoring,
-an interactive Review Mode UI, Business/Career/Kids Language Brain,
-Business Course, career tools, billing, and the full multilingual content
-set are **not** built yet; they are future phases.
+currently at **Phase 5: CEFR Assessment v2**, on top of Phase 1 (security/
+auth/database foundation), Phase 2 (onboarding), Phase 3 (the AI lesson
+engine), and Phase 4 (the Language Brain). Voice, pronunciation
+coaching/scoring, listening scoring, an interactive Review Mode UI, an
+interactive CEFR Assessment-taking UI (the current one is real but
+read-only status + a "not available yet" start button — no v2 item
+content has been seeded), Business/Career/Kids Language Brain, Business
+Course, career tools, billing, and the full multilingual content set are
+**not** built yet; they are future phases.
 
 > The onboarding screens have had a visual pass matching
 > `design-references/onboarding/` (colors, spacing, hierarchy) — but only
@@ -74,13 +77,17 @@ Level Security, not by keeping these secret.
 3. Run the SQL in `supabase/migrations/0001_init.sql`, then
    `0002_onboarding.sql`, then `0003_placement_category_breakdown.sql`,
    then `0004_placement_test_version.sql`, then
-   `0005_ai_lesson_engine.sql`, then `0006_language_brain.sql`, against
-   your project **in that order** — either paste them into the Supabase
-   SQL editor, or apply them with the Supabase CLI (`supabase db push`)
-   if you use one. **This repository does not apply migrations for you**
-   — `0005_ai_lesson_engine.sql` and `0006_language_brain.sql` in
+   `0005_ai_lesson_engine.sql`, then `0006_language_brain.sql`, then
+   `0007_cefr_assessment_v2.sql`, against your project **in that order**
+   — either paste them into the Supabase SQL editor, or apply them with
+   the Supabase CLI (`supabase db push`) if you use one. **This repository
+   does not apply migrations for you** — `0005_ai_lesson_engine.sql`,
+   `0006_language_brain.sql`, and `0007_cefr_assessment_v2.sql` in
    particular must be pasted into your own project's SQL editor before
-   the lesson engine / Language Brain will work against it.
+   the lesson engine / Language Brain / CEFR Assessment v2 will work
+   against it. `0007_cefr_assessment_v2.sql` has **not** been applied to
+   any project by this pass — it is new, unreviewed SQL; read it before
+   pasting it anywhere, including your own dev project.
 4. In Authentication settings, decide whether email confirmation is
    required for sign-up (the sign-up flow already handles both cases).
 5. Set `OPENAI_API_KEY` (see "Environment variables" above) to actually
@@ -111,12 +118,19 @@ error/vocabulary/skill/review memory, plus an ingestion idempotency
 ledger) with the same read-only-RLS / service-role-write pattern, and two
 `service_role`-only SQL functions that atomically apply one lesson's
 evidence or one review result — see "Language Brain" below.
+`0007_cefr_assessment_v2.sql` adds the CEFR Assessment v2 schema (policy
+registry, versioned items, assessments/responses, writing evaluations,
+per-skill CEFR state, level-readiness snapshots, Bridge Plans) plus three
+backward-compatible columns on `user_languages`, all under the same
+read-only-RLS / service-role-write pattern and four `service_role`-only
+SQL functions — see "CEFR Assessment v2" below. It has not been applied
+to any Supabase project by this pass; it is new SQL awaiting review.
 
 ## Current phase
 
-**Phase 4 — Language Brain**, on top of Phase 3 (AI Lesson Engine),
-Phase 2 (Onboarding), and Phase 1 (Foundation + Security + Auth +
-Database + Responsive UI Skeleton).
+**Phase 5 — CEFR Assessment v2**, on top of Phase 4 (Language Brain),
+Phase 3 (AI Lesson Engine), Phase 2 (Onboarding), and Phase 1
+(Foundation + Security + Auth + Database + Responsive UI Skeleton).
 
 Phase 1, still in place:
 
@@ -293,10 +307,104 @@ teacher, so switching teachers never resets or forks it.
   extended for the personalization hook and ingestion trigger — run with
   `npm run test`.
 
+Phase 5, new in this pass — **CEFR Assessment v2**: a production-grade
+placement/readiness/confirmation architecture that replaces the Phase 2.1
+placement bank's single `current_cefr_level` field with a model that
+separates what's actually been demonstrated from what a learner is
+currently practicing at — without ever letting the Language Brain
+auto-promote a confirmed level.
+
+- **Confirmed vs. learning, and why both exist.** `user_languages` keeps
+  its original `current_cefr_level` (unchanged meaning, for backward
+  compatibility) and gains `confirmed_cefr_level` (only ever set by a
+  real, evaluated assessment), `learning_cefr_level` (the level content is
+  currently pitched at — can be ahead of what's confirmed), and
+  `assessment_status`. A learner can be *learning* at B2 while only
+  *confirmed* at B1; the dashboard and lesson engine show both, distinctly
+  — never collapsed into one number.
+- **Four assessment types** (`initial_placement`, `level_readiness`,
+  `level_confirmation`, `reassessment`) share one schema
+  (`language_assessments`/`assessment_responses`) rather than four bespoke
+  tables.
+- **Six skill domains**, but only four are assessable today: grammar,
+  vocabulary, reading, and writing (the last via real AI evaluation).
+  Listening, speaking, and pronunciation stay structurally present but
+  `null`/unassessed — this phase still has no voice pipeline, so nothing
+  fabricates evidence for them.
+- **Item versioning**: every assessment item has a stable identity
+  (`assessment_items`) separate from its actual content
+  (`assessment_item_versions`, only one `active` version per item at a
+  time). A response always references the exact item version the learner
+  saw, so a later content revision can never rewrite the meaning of a
+  historical answer.
+- **Real writing evaluation, honestly bounded.** Writing responses are
+  scored by the same OpenAI provider abstraction the lesson engine uses,
+  against a versioned rubric (`writing_rubric_versions`), with
+  structured-output validation that requires exact criterion-key coverage
+  — a partial or malformed AI response is rejected outright, never
+  half-scored. The AI produces evidence only; it has no code path to set a
+  CEFR level directly.
+- **A deliberately empty policy registry.** `assessment_policy_versions`
+  exists and `getActivePolicy()` reads it, but no policy is seeded by this
+  pass — every threshold a real deployment would eventually need (minimum
+  evidence for confirmation, minimum per-skill score, level-readiness
+  boundaries, and more) stays undefined on purpose rather than shipping
+  with invented numbers. Until a human activates a policy, readiness
+  snapshots record a fixed `readiness_pending` status instead of guessing.
+  See `AGENTS.md`'s "CEFR Assessment v2" section for the full list of
+  undefined thresholds and why each one is left that way.
+- **C1 stays the ceiling**, carried forward unchanged from Phase 2.1 —
+  three-item-per-level evidence still isn't enough to responsibly award
+  C2, and this phase doesn't add the richer evidence (adaptive items,
+  speech) that would change that.
+- **Evidence-gated scoring**, not a simple average — per-skill scoring
+  mirrors the Phase 2.1 placement algorithm's pass-threshold logic rather
+  than inventing new math, so a handful of easy correct answers still
+  can't produce a high level.
+- **Legacy placement v1 stays legacy.** A pre-existing placement attempt
+  can be losslessly mapped into the v2 shape for display
+  (`src/lib/assessment/legacyImport.ts`), but nothing in this pass
+  auto-migrates or auto-seeds v1 attempts into v2's tables — that stays an
+  explicit, separate decision.
+- **Bridge Plans** (`bridge_plans`/`bridge_plan_targets`) link a learner's
+  actual skill gaps to real assessment/Language Brain evidence — never a
+  generic "study more" placeholder — and are only ever read, not generated
+  by this pass (no content is seeded yet).
+- **Security, the now-familiar pattern.** All twelve new tables are
+  RLS-scoped to `auth.uid()` for reads; `authenticated`/`anon` have no
+  insert/update grant on any of them, matching the lesson engine and
+  Language Brain precedent, since a browser's Supabase session and a
+  Server Action's server client share the same publishable-key
+  credential. Every write goes through `service_role`
+  (`src/lib/assessment/submit.ts`) via four atomic SQL functions
+  (`cefr_v2_create_assessment`, `cefr_v2_record_response`,
+  `cefr_v2_submit_assessment`, `cefr_v2_finalize_writing_skill`), with
+  `user_id` always derived from a server-verified session — never from
+  form data. Structural triggers reject snapshot/status mutation outside
+  the allowed forward-only transitions and reject every response/
+  evaluation update or delete unconditionally, even against
+  `service_role`.
+- **Idempotent and concurrency-safe**: row locking (`for update`) and
+  status guards inside the SQL functions make retries after a network
+  failure or duplicate submission safe; a unique constraint on
+  `(assessment_id, item_id)` prevents a duplicate response row.
+- A new route, `/dashboard/assessment`
+  (`src/app/(dashboard)/dashboard/assessment/page.tsx`), and a dashboard
+  header update showing "Confirmed X" / "Estimated X" / "Not yet
+  assessed" with a link into it — honest about the current lack of seeded
+  v2 content rather than faking a test.
+- Automated tests: `src/lib/assessment/*.test.ts`,
+  `src/features/assessment/actions.test.ts` — run with `npm run test`.
+- **Migration `0007_cefr_assessment_v2.sql` has not been applied to any
+  Supabase project.** It is new, unreviewed SQL — read it (and
+  `AGENTS.md`'s "CEFR Assessment v2" section) before pasting it into a
+  real project, including your own dev project.
+
 Not built yet, intentionally: real pronunciation/listening scoring or
-memory, an interactive Review Mode UI, Business/Career/Kids Language
-Brain, Business Course, career tools, billing, push notifications, and
-the full 50-language content set.
+memory, an interactive Review Mode UI, any active assessment policy
+(minimum-evidence/readiness thresholds), Bridge Plan content generation,
+Business/Career/Kids Language Brain, Business Course, career tools,
+billing, push notifications, and the full 50-language content set.
 
 ## Security principles
 
@@ -306,12 +414,19 @@ the full 50-language content set.
   DAL, independent of what any parent layout already checked.
 - Supabase Row Level Security is mandatory on every table, scoped to
   `auth.uid()` — no broad public policies.
-- The Supabase service-role key is used in exactly two places — the AI
-  lesson engine's writes and the Language Brain's writes
-  (`src/lib/supabase/serviceRole.ts`) — because `auth.uid()`-scoped RLS
-  cannot distinguish "our server generated this" from "the browser wrote
-  this with its own session"; it stays server-only, out of any
-  `NEXT_PUBLIC_` variable, and out of every other feature.
+- The Supabase service-role key is used in exactly three places — the AI
+  lesson engine's writes, the Language Brain's writes, and CEFR Assessment
+  v2's writes (`src/lib/supabase/serviceRole.ts`) — because
+  `auth.uid()`-scoped RLS cannot distinguish "our server generated this"
+  from "the browser wrote this with its own session"; it stays
+  server-only, out of any `NEXT_PUBLIC_` variable, and out of every other
+  feature.
+- CEFR Assessment v2 never lets the browser set a correctness flag, a
+  skill score, a confirmed/learning CEFR level, or an assessment status
+  directly — every one of those is computed server-side inside a
+  `service_role`-only SQL function from real, already-recorded responses,
+  and no threshold governing confirmation or readiness exists yet: the
+  policy registry is deliberately empty until a human activates one.
 - The Language Brain never lets the browser set a skill score, a
   recurring-mistake count, a mastery flag, or a review date directly —
   every one of those is computed server-side from real, already-persisted
@@ -380,17 +495,37 @@ Runs the automated test suite (Vitest) for:
   (`personalization.test.ts`), and `recordReviewResultAction`'s
   ownership check plus server-computed (never client-trusted)
   stage/mastery values (`src/features/languageBrain/actions.test.ts`).
+- CEFR Assessment v2 — the evidence-gated skill-scoring formulas
+  (`src/lib/assessment/scoring.test.ts`), the fail-closed policy reader
+  returning `null` with no active policy (`policy.test.ts`), item
+  selection's skill bucketing/cap and that listening/speaking/
+  pronunciation items are never selected (`itemSelection.test.ts`),
+  lossless legacy-v1-to-v2 mapping without any auto-migration side effect
+  (`legacyImport.test.ts`), writing evaluation's exact-criterion-coverage
+  validation and all-or-nothing rejection of malformed AI output
+  (`writingEvaluation.test.ts`), the read-only DAL's target-language
+  isolation, independent confirmed/learning reporting, and "absent, not
+  fabricated" handling of unassessed skills and missing bridge plans
+  (`dal.test.ts`), the full orchestration in `submit.ts` — honest
+  unavailability when no items exist, never sending an answer key to the
+  client, idempotent/retry-safe submission across pure-MCQ and
+  writing-pending paths, and failing (not silently stalling) an assessment
+  with no active writing rubric (`submit.test.ts`) — and the Server
+  Actions layer proving trusted context is always server-derived and that
+  no form field anywhere lets a client submit a correctness flag, skill
+  score, or CEFR level (`src/features/assessment/actions.test.ts`).
 
 These are deterministic unit/mock-boundary tests with no live database or
 network dependency — the AI provider is mocked only at its boundary
 (`src/lib/ai/provider.ts`), not the business rules being tested. One case
-from the Phase 3 brief (idempotent duplicate submission) and the Phase 4
-cross-lesson recurrence count/RLS/grant/trigger guarantees are
-intentionally not covered by a test — see the comments in `actions.test.ts`
-and `ingest.test.ts` for why — and are instead DB unique
-constraints/generated columns (`0005_ai_lesson_engine.sql`,
-`0006_language_brain.sql`) plus code-reviewed logic, verified manually
-against a live Supabase project.
+from the Phase 3 brief (idempotent duplicate submission), the Phase 4
+cross-lesson recurrence count/RLS/grant/trigger guarantees, and CEFR
+Assessment v2's row-locking/unique-constraint/structural-trigger
+guarantees are intentionally not covered by a test — see the comments in
+`actions.test.ts` and `ingest.test.ts` for why — and are instead DB unique
+constraints/generated columns/triggers (`0005_ai_lesson_engine.sql`,
+`0006_language_brain.sql`, `0007_cefr_assessment_v2.sql`) plus
+code-reviewed logic, verified manually against a live Supabase project.
 
 ## Project structure
 
@@ -399,18 +534,23 @@ src/
   app/            App Router routes: (marketing), (auth), (dashboard), (onboarding)
                   (dashboard)/dashboard/lessons/[sessionId] — live lesson UI
                   (dashboard)/dashboard/language-brain — Language Brain view
+                  (dashboard)/dashboard/assessment — CEFR Assessment v2 view
   components/     Reusable UI (ui/) and layout/navigation primitives
   features/       Feature-scoped modules (auth, dashboard, onboarding,
-                  lessons, languageBrain)
+                  lessons, languageBrain, assessment)
   lib/            supabase/ (per-request client, browser client,
-                  service-role client for lesson + Language Brain writes
-                  only), auth/ (DAL), onboarding/ (DAL), placement/,
-                  plan/, security/, utils/, ai/ (provider + structured
-                  output schema), lessons/ (DAL, prompt builder, rate
-                  limiting, AI orchestration), languageBrain/ (DAL,
-                  ingestion pipeline, AI classification, deterministic
-                  scoring + spaced-repetition math, bounded
-                  personalization context builder)
+                  service-role client for lesson + Language Brain + CEFR
+                  Assessment v2 writes only), auth/ (DAL), onboarding/
+                  (DAL), placement/, plan/, security/, utils/, ai/
+                  (provider + structured output schema), lessons/ (DAL,
+                  prompt builder, rate limiting, AI orchestration),
+                  languageBrain/ (DAL, ingestion pipeline, AI
+                  classification, deterministic scoring +
+                  spaced-repetition math, bounded personalization context
+                  builder), assessment/ (constants, schemas, fail-closed
+                  policy reader, deterministic scoring mirror, item
+                  selection, writing evaluation, legacy-v1 mapping, the
+                  submit orchestration, read-only DAL)
   constants/      Shared route/language/goal/teacher catalogs
   types/          Hand-maintained Supabase types
   styles/         Design tokens
@@ -419,7 +559,8 @@ supabase/
   migrations/     SQL schema + RLS policies (0001_init, 0002_onboarding,
                   0003_placement_category_breakdown,
                   0004_placement_test_version, 0005_ai_lesson_engine,
-                  0006_language_brain)
+                  0006_language_brain, 0007_cefr_assessment_v2 — not yet
+                  applied to any project)
 test/
   server-only-stub.ts  Vitest alias target for the "server-only" package
                        (see vitest.config.mts) — see AGENTS.md for why
