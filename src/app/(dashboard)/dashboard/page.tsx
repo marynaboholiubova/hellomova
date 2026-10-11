@@ -54,6 +54,7 @@ export default async function DashboardPage() {
       teacherName={teacher?.name ?? null}
       canStartLesson={Boolean(primaryLanguage)}
       activeLessonSessionId={activeLesson?.id ?? null}
+      activeLessonSession={activeLesson ? { id: activeLesson.id, mode: activeLesson.mode } : null}
       languageBrain={languageBrain}
     />
   );

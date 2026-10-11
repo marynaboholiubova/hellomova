@@ -16,7 +16,7 @@ This summary covers ONLY this one lesson session — do not claim anything about
 /**
  * Builds the one-off prompt used to generate a session summary when a
  * lesson completes. Session-local only, by design — no cross-session
- * memory or "recurring mistake" claims. That is Phase 4 (Language
+ * memory or "recurring mistake" claims. That is Phase 6 (Language
  * Brain) territory and is explicitly not implemented here.
  */
 export function buildLessonSummaryMessages(

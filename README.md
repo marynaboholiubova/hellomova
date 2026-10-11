@@ -1,14 +1,19 @@
 # HelloMova
 
-HelloMova is a premium AI language-learning platform. This repository is
-currently at **Phase 5: CEFR Assessment v2**, on top of Phase 1 (security/
-auth/database foundation), Phase 2 (onboarding), Phase 3 (the AI lesson
-engine), and Phase 4 (the Language Brain). Voice, pronunciation
-coaching/scoring, listening scoring, an interactive Review Mode UI, an
-interactive CEFR Assessment-taking UI (the current one is real but
-read-only status + a "not available yet" start button — no v2 item
-content has been seeded), Business/Career/Kids Language Brain, Business
-Course, career tools, billing, and the full multilingual content set are
+HelloMova is a premium AI language-learning platform, built against the
+project's canonical 18-phase roadmap. This repository is currently at
+**Phase 9: Business**, on top of Phase 1 (security/auth/database
+foundation), Phase 2 (onboarding), Phase 5 (the AI lesson engine), Phase 6
+(the Language Brain), Phase 7 (Learning Modes), and Phase 8 (Pronunciation
+/ Mary — real audio capture and transcript-based feedback). CEFR
+Assessment v2 is also built — it has no dedicated number in the canonical
+roadmap, so it's referred to descriptively here rather than as "Phase N."
+Real acoustic/phoneme-level pronunciation scoring, listening scoring, an
+interactive Review Mode UI, an interactive CEFR Assessment-taking UI (the
+current one is real but read-only status + a "not available yet" start
+button — no v2 item content has been seeded), Career (Phase 10), Kids
+Language Brain, document analysis, billing, Phase 13's subscription/
+voice-minute budget system, and the full multilingual content set are
 **not** built yet; they are future phases.
 
 > The onboarding screens have had a visual pass matching
@@ -128,9 +133,12 @@ to any Supabase project by this pass; it is new SQL awaiting review.
 
 ## Current phase
 
-**Phase 5 — CEFR Assessment v2**, on top of Phase 4 (Language Brain),
-Phase 3 (AI Lesson Engine), Phase 2 (Onboarding), and Phase 1
-(Foundation + Security + Auth + Database + Responsive UI Skeleton).
+**Phase 9 — Business**, on top of Phase 8 (Pronunciation / Mary), Phase 7
+(Learning Modes), Phase 6 (Language Brain), Phase 5 (AI Lesson Engine),
+Phase 2 (Onboarding), and Phase 1 (Foundation + Security + Auth +
+Database + Responsive UI Skeleton). CEFR Assessment v2 is also built,
+layered on top of these — it has no dedicated number in the canonical
+roadmap, so it's described below without a "Phase N" label.
 
 Phase 1, still in place:
 
@@ -198,7 +206,7 @@ teacher → dashboard.
   reuse the same tokens/components for a coherent look but aren't
   verified against a real mockup.
 
-Phase 3, new in this pass — the AI lesson engine. One mode: **General AI
+Phase 5, new in this pass — the AI lesson engine. One mode: **General AI
 Lesson**, text-only.
 
 - Start a lesson from the dashboard (`StartLessonButton` →
@@ -248,7 +256,7 @@ Lesson**, text-only.
 - Automated tests: `src/lib/lessons/*.test.ts`, `src/lib/ai/*.test.ts`,
   `src/features/lessons/actions.test.ts` — run with `npm run test`.
 
-Phase 4, new in this pass — the **Language Brain**: durable, cross-session
+Phase 6, new in this pass — the **Language Brain**: durable, cross-session
 learning memory, owned by `(user_id, target_language_code)` — never by
 teacher, so switching teachers never resets or forks it.
 
@@ -307,8 +315,10 @@ teacher, so switching teachers never resets or forks it.
   extended for the personalization hook and ingestion trigger — run with
   `npm run test`.
 
-Phase 5, new in this pass — **CEFR Assessment v2**: a production-grade
-placement/readiness/confirmation architecture that replaces the Phase 2.1
+**CEFR Assessment v2** (no dedicated phase number in the canonical
+roadmap — described here rather than labeled "Phase N"): a
+production-grade placement/readiness/confirmation architecture that
+replaces the Phase 2.1
 placement bank's single `current_cefr_level` field with a model that
 separates what's actually been demonstrated from what a learner is
 currently practicing at — without ever letting the Language Brain
@@ -400,11 +410,130 @@ auto-promote a confirmed level.
   `AGENTS.md`'s "CEFR Assessment v2" section) before pasting it into a
   real project, including your own dev project.
 
-Not built yet, intentionally: real pronunciation/listening scoring or
-memory, an interactive Review Mode UI, any active assessment policy
-(minimum-evidence/readiness thresholds), Bridge Plan content generation,
-Business/Career/Kids Language Brain, Business Course, career tools,
-billing, push notifications, and the full 50-language content set.
+Phase 7, new in this pass — **Learning Modes**: a thin, server-validated
+catalog layer over the existing AI Lesson Engine, not a second engine.
+
+- **Grounded, not invented.** The only mode that existed anywhere in the
+  repo before this phase was `"general"`. Two deliberately separate
+  catalogs: `src/lib/learningModes/constants.ts`'s `LEARNING_MODES` holds
+  ONLY engine-backed, startable modes (today: just `general`);
+  `src/lib/learningModes/futureCapabilities.ts`'s
+  `FUTURE_LEARNING_CAPABILITIES` holds honest, non-interactive dashboard
+  previews of real future capabilities (today: just `pronunciation`,
+  deferred to Phase 8) — structurally disjoint from the engine catalog,
+  proven by tests. No Business or Career learning mode was added; James
+  (Business English) and the "business" goal already cover that as
+  independent teacher/goal choices. An old, inert "Role Play" dashboard
+  label with no defined product scope was removed rather than kept or
+  replaced with another invented entry.
+- **Mode and teacher stay separate** — a teacher is chosen once at
+  onboarding and never bound to a mode; a mode only selects lesson
+  *intent*. `startLessonAction` now validates an optional `mode` field
+  (`LessonEngineModeIdSchema` as of Phase 8 — see below; originally
+  `LearningModeIdSchema` when `general` was the only mode any engine
+  supported) and rejects anything else before creating a session; nothing
+  else is ever read from client form data for this purpose.
+- **No database migration** — `lesson_sessions.mode` already supported
+  this without a schema change.
+- Dashboard: the old static "Quick practice" tiles (all mislabeled
+  "Soon," including the one — "Talk with AI" — that already worked) are
+  replaced by `LearningModesSection`, rendering one real, working mode
+  tile and one honestly-labeled future-capability preview tile.
+- Automated tests: `src/lib/learningModes/constants.test.ts`,
+  `src/lib/learningModes/futureCapabilities.test.ts`,
+  `src/lib/lessons/prompt.test.ts`'s mode-hook regression check, and new
+  `startLessonAction` coverage in `src/features/lessons/actions.test.ts`
+  (this action had no test coverage before this phase).
+- See AGENTS.md's "Learning Modes (Phase 7)" section for the full
+  architecture, the mode-vs-teacher reasoning, and how to add a future
+  mode safely.
+
+Phase 8, new in this pass — **Pronunciation / Mary**: a real, separate
+audio-evidenced engine, not a bolt-on to the text Lesson Engine.
+
+- **Grounded from zero existing infrastructure.** This repo had no
+  audio/voice code anywhere before this phase. `pronunciation_attempts`
+  (`supabase/migrations/0009_pronunciation.sql`) is one flat table (not a
+  session+attempt split — no real "session" concept exists here), with the
+  same service-role-write / explicit-revoke security model as
+  `lesson_sessions`, plus a trigger enforcing a one-shot
+  `pending → completed | failed` lifecycle.
+- **No audio is ever stored.** The recording is transcribed in-memory via
+  a new, separate audio-provider boundary
+  (`src/lib/ai/audioProvider.ts`/`openaiAudioProvider.ts`, OpenAI
+  `whisper-1`) and discarded — only the transcript and structured
+  evaluation persist. No Supabase Storage bucket, policy, or retention
+  schedule exists or was needed.
+- **No fabricated accuracy, structurally.** The model only ever produces
+  `recognitionQuality`/`contentMatch`/`differences`/`practiceSuggestion`
+  (`PronunciationModelOutputSchema`) — no numeric score field exists
+  anywhere in the shape. `recognizedTranscript` and `limitations` (a
+  fixed disclaimer stating this is transcription-based, not acoustic/
+  phoneme analysis) are appended by server code, never produced by the
+  model, so the limitation can't be watered down or omitted.
+- **Mary, always** — Mary IS the Pronunciation/Phonetics specialist, a
+  canonical product decision: pronunciation feedback is always presented
+  through Mary regardless of the learner's chosen teacher. This is a
+  specialist-capability binding scoped to this one feature; General and
+  Business lessons keep using whichever teacher the learner actually
+  selected, completely unaffected.
+- Promoted from `FUTURE_LEARNING_CAPABILITIES` into the real
+  `LEARNING_MODES` catalog only once the full pipeline was real — see
+  `LearningModeKind` (`"lesson" | "pronunciation"`) and the new
+  `LessonEngineModeIdSchema`/`LearningModeIdSchema` split.
+- New route `/dashboard/pronunciation`: real `MediaRecorder` capture with
+  browser feature-detection, explicit permission/recording/result/failure
+  states, and a real native audio-playback control (no fake waveform).
+- Automated tests: `src/lib/pronunciation/generatePhrase.test.ts`,
+  `evaluate.test.ts` (real Zod validation against mocked provider
+  responses), `src/features/pronunciation/actions.test.ts` (ownership,
+  MIME/size validation, idempotent replay, race handling).
+- See AGENTS.md's "Pronunciation / Mary (Phase 8)" section for the full
+  architecture, the Mary-binding and no-audio-retention decisions, and
+  what's intentionally deferred (Language Brain ingestion, any raw-audio
+  retention).
+
+Phase 9, new in this pass — **Business**: a second engine-backed
+`kind: "lesson"` mode, reusing the AI Lesson Engine entirely.
+
+- **Grounded in an existing goal, not invented.** The `business` learning
+  goal already existed (`src/constants/goals.ts`,
+  `src/lib/plan/generatePlan.ts`'s own description: "Professional
+  vocabulary, meetings, and formal writing") — Business mode's system
+  prompt draws from that same description, not a new curriculum.
+- **No database migration** — `lesson_sessions.mode`'s Zod gate
+  (`LessonModeSchema`) grew from `z.enum(["general"])` to
+  `z.enum(["general", "business"])`, additive, no schema change.
+- **Teacher binding left open, deliberately**: Business mode uses the
+  learner's own already-selected teacher — James is NOT auto-assigned.
+  No existing rule bound any goal or mode to a specific teacher, so this
+  is the only grounded choice; flagged as an open product decision if a
+  stronger binding is wanted later.
+- **Learning goal and learning mode stay two independent fields** — a
+  learner can start a `business`-mode lesson regardless of their stored
+  `learning_goal`, and vice versa.
+- **Reuses Language Brain ingestion as-is** — a Business lesson is an
+  ordinary `lesson_sessions` row, so no new table or ingestion path was
+  needed.
+- Fixed in passing: the dashboard's active-lesson state only carried a
+  session id before this phase; with two `kind: "lesson"` modes now real,
+  it now carries `{ id, mode }` so "Continue lesson" only appears on the
+  tile matching the actually-active session's mode.
+- Automated tests: new `startLessonAction` cases for `business`
+  (session created correctly, teacher unchanged, independent of
+  `learning_goal`), a continuation test, `prompt.test.ts` additive-only
+  checks, and `career`-rejection guards everywhere `role_play` was already
+  tested.
+- See AGENTS.md's "Business (Phase 9)" section for the full architecture
+  and the product decisions left deliberately open (teacher auto-binding,
+  curriculum taxonomy beyond the existing goal description).
+
+Not built yet, intentionally: real acoustic/phoneme-level pronunciation
+scoring, listening scoring, an interactive Review Mode UI, any active
+assessment policy (minimum-evidence/readiness thresholds), Bridge Plan
+content generation, Career (Phase 10), Kids Language
+Brain, Business Course, career tools, billing, push notifications, and
+the full 50-language content set.
 
 ## Security principles
 
@@ -518,7 +647,7 @@ Runs the automated test suite (Vitest) for:
 These are deterministic unit/mock-boundary tests with no live database or
 network dependency — the AI provider is mocked only at its boundary
 (`src/lib/ai/provider.ts`), not the business rules being tested. One case
-from the Phase 3 brief (idempotent duplicate submission), the Phase 4
+from the Phase 5 brief (idempotent duplicate submission), the Phase 6
 cross-lesson recurrence count/RLS/grant/trigger guarantees, and CEFR
 Assessment v2's row-locking/unique-constraint/structural-trigger
 guarantees are intentionally not covered by a test — see the comments in
@@ -535,22 +664,30 @@ src/
                   (dashboard)/dashboard/lessons/[sessionId] — live lesson UI
                   (dashboard)/dashboard/language-brain — Language Brain view
                   (dashboard)/dashboard/assessment — CEFR Assessment v2 view
+                  (dashboard)/dashboard/pronunciation — Pronunciation / Mary (Phase 8)
   components/     Reusable UI (ui/) and layout/navigation primitives
   features/       Feature-scoped modules (auth, dashboard, onboarding,
-                  lessons, languageBrain, assessment)
+                  lessons, languageBrain, assessment, pronunciation)
   lib/            supabase/ (per-request client, browser client,
                   service-role client for lesson + Language Brain + CEFR
-                  Assessment v2 writes only), auth/ (DAL), onboarding/
-                  (DAL), placement/, plan/, security/, utils/, ai/
-                  (provider + structured output schema), lessons/ (DAL,
-                  prompt builder, rate limiting, AI orchestration),
+                  Assessment v2 + Pronunciation writes only), auth/ (DAL),
+                  onboarding/ (DAL), placement/, plan/, security/, utils/,
+                  ai/ (text provider + structured output schema, and —
+                  Phase 8 — a separate audio transcription provider),
+                  lessons/ (DAL, prompt builder incl. Phase 9's Business
+                  mode instructions, rate limiting, AI orchestration),
                   languageBrain/ (DAL, ingestion pipeline, AI
                   classification, deterministic scoring +
                   spaced-repetition math, bounded personalization context
                   builder), assessment/ (constants, schemas, fail-closed
                   policy reader, deterministic scoring mirror, item
                   selection, writing evaluation, legacy-v1 mapping, the
-                  submit orchestration, read-only DAL)
+                  submit orchestration, read-only DAL), learningModes/
+                  (the canonical Learning Modes catalog, split Phase 8
+                  into lesson-engine vs. other-engine-backed modes),
+                  pronunciation/ (Phase 8: schemas, prompt building,
+                  phrase/evaluation generation, rate limiting, read-only
+                  DAL)
   constants/      Shared route/language/goal/teacher catalogs
   types/          Hand-maintained Supabase types
   styles/         Design tokens
@@ -559,8 +696,11 @@ supabase/
   migrations/     SQL schema + RLS policies (0001_init, 0002_onboarding,
                   0003_placement_category_breakdown,
                   0004_placement_test_version, 0005_ai_lesson_engine,
-                  0006_language_brain, 0007_cefr_assessment_v2 — not yet
-                  applied to any project)
+                  0006_language_brain, 0007_cefr_assessment_v2,
+                  0008_cefr_v2_mixed_band_state_fix — both already applied
+                  to the project's live Supabase instance;
+                  0009_pronunciation — NOT yet applied anywhere, reviewed
+                  but still pending)
 test/
   server-only-stub.ts  Vitest alias target for the "server-only" package
                        (see vitest.config.mts) — see AGENTS.md for why

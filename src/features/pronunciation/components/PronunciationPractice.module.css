@@ -1,0 +1,130 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--content-width-sm);
+}
+
+.intro {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.phraseLabel,
+.transcriptLabel,
+.practiceSuggestionLabel {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent-primary);
+}
+
+.phrase {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.recordingIndicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+  margin-right: var(--space-2);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .recordingIndicator {
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.recordedBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.audioPlayer {
+  width: 100%;
+}
+
+.recordedActions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.recordedActions > * {
+  flex: 1;
+}
+
+.resultBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.transcript {
+  font-style: italic;
+  color: var(--color-text-primary);
+}
+
+.evaluationRow {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.badgeLabelled {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.badgeCaption {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.badge {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: capitalize;
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-3);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+}
+
+.badge[data-level="clear"],
+.badge[data-level="close_match"] {
+  background: var(--color-accent-primary-tint);
+  color: var(--color-accent-primary);
+}
+
+.observations {
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.practiceSuggestion {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.limitations {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}

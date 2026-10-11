@@ -5,6 +5,7 @@ export const ROUTES = {
   dashboard: "/dashboard",
   languageBrain: "/dashboard/language-brain",
   assessment: "/dashboard/assessment",
+  pronunciation: "/dashboard/pronunciation",
   onboardingNativeLanguage: "/onboarding/native-language",
   onboardingTargetLanguage: "/onboarding/target-language",
   onboardingGoal: "/onboarding/goal",

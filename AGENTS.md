@@ -10,21 +10,34 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # HelloMova — Project Rules
 
-**Project:** HelloMova, a premium AI language-learning platform. Phase 1
-built the technical foundation (security, auth, database, responsive UI
+**Project:** HelloMova, a premium AI language-learning platform, built
+against the project's canonical 18-phase roadmap (1 Foundation/security,
+2 UI foundation, 3 Auth/onboarding, 4 Core dashboard, 5 AI lesson engine,
+6 Language Brain, 7 Learning Modes, 8 Pronunciation/Mary, 9 Business, 10
+Career, 11 Real Documents, 12 Payments, 13 Voice-cost protection, 14 50
+languages, 15 SEO Web, 16 Analytics, 17 Beta QA, 18 Launch). Phase 1 built
+the technical foundation (security, auth, database, responsive UI
 skeleton); Phase 2 added onboarding (native language → target language →
 goal → placement test → CEFR result → personal plan → AI teacher →
-dashboard); Phase 3 added the real AI lesson engine (one mode — General AI
-Lesson, text-only); Phase 4 added the Language Brain (durable, per-user
-+ per-target-language cross-session learning memory derived from
-completed lessons); Phase 5 added CEFR Assessment v2 (durable,
-policy-gated confirmed-vs-learning-level architecture, item versioning,
-and skill-specific evidence — see below). Do not implement future phases
-(voice, pronunciation scoring/memory, listening scoring, an interactive
-Review Mode UI, an interactive CEFR Assessment-taking UI beyond the
-read-only status view, Business/Career/Kids Language Brain, Business
-Course, career tools, billing, multilingual content) without explicit
-instruction.
+dashboard); Phase 5 added the real AI lesson engine (one mode — General
+AI Lesson, text-only); Phase 6 added the Language Brain (durable,
+per-user + per-target-language cross-session learning memory derived from
+completed lessons); Phase 7 added Learning Modes (a thin,
+server-validated catalog layer over the existing AI Lesson Engine — see
+below); Phase 8 added Pronunciation / Mary (real audio capture,
+transcription, and honest transcript-based feedback — see below); Phase 9
+added Business (a second engine-backed lesson mode for professional
+communication — see below). CEFR Assessment v2 (durable, policy-gated
+confirmed-vs-learning-level architecture, item versioning, and
+skill-specific evidence — see below) is also built; it has no dedicated
+number of its own in the canonical roadmap, so it is referred to
+descriptively rather than as "Phase N" anywhere in this file. Do not
+implement future phases (real acoustic/phoneme-level pronunciation
+scoring, listening scoring, an interactive Review Mode UI, an interactive
+CEFR Assessment-taking UI beyond the read-only status view, Career (Phase
+10), Kids Language Brain, Phase 11 document analysis, billing,
+multilingual content, Phase 13's subscription/voice-minute budget system)
+without explicit instruction.
 
 `src/constants/languages.ts` holds HelloMova's real, finalized 50-language
 launch catalog (with the 5 Arabic dialects modeled as `variantOf: "ar"`).
@@ -95,7 +108,7 @@ specifically to prevent regressing either one:
   — run with `npm run test`. Any change to `scoring.ts` or the bank
   validation schemas should keep these passing.
 
-### AI lesson engine (Phase 3)
+### AI lesson engine (Phase 5)
 
 One mode exists: **General AI Lesson**, text-only (no voice/pronunciation
 scoring — Mary's persona explicitly disclaims ever having "heard" the
@@ -204,7 +217,7 @@ not part of this section.
   imported from a Client Component module," this alias is why it exists —
   don't remove it.
 
-### Language Brain (Phase 4)
+### Language Brain (Phase 6)
 
 Durable, cross-session learning memory, owned by **(`user_id`,
 `target_language_code`) — never `teacher_id`.** Switching teachers
@@ -217,7 +230,7 @@ languages gets two fully isolated memories — every query filters by both
   additive, RLS-select-only for `authenticated`):
   `language_brain_profiles` (one row per user+language, evidence-volume
   anchor), `language_brain_skill_states` (normalized per-skill score —
-  Phase 4 only ever writes `'grammar'`; see below), `language_brain_error_patterns`
+  Phase 6 only ever writes `'grammar'`; see below), `language_brain_error_patterns`
   (one row per normalized `pattern_key`, `occurrence_count` +
   `is_recurring` — a **generated column**, `occurrence_count >= 2`, so the
   recurring threshold can't be spoofed by a write path that forgets to
@@ -227,7 +240,7 @@ languages gets two fully isolated memories — every query filters by both
   log), and `language_brain_ingestions` (the idempotency ledger — `unique
   (lesson_session_id)` is the actual guarantee a lesson is never ingested
   twice).
-- **Writes require `service_role`, same threat model as Phase 3 — read
+- **Writes require `service_role`, same threat model as Phase 5 — read
   0005's header comment, then 0006's.** Every Language Brain row is
   entirely server-derived from trusted lesson evidence; the browser must
   never be able to say "I made this error," "my grammar score is 90," or
@@ -261,7 +274,7 @@ languages gets two fully isolated memories — every query filters by both
     longer has.
 - **Reads stay on the ordinary per-request RLS client**
   (`src/lib/languageBrain/dal.ts`, `personalization.ts`) — `auth.uid()`
-  scoping is a real backstop here, not decoration, same as Phase 3.
+  scoping is a real backstop here, not decoration, same as Phase 5.
 - **Ingestion pipeline** (`src/lib/languageBrain/ingest.ts`,
   `ensureLessonIngested(sessionId)`): reads the completed
   `lesson_session` + its `lesson_messages` (already-real, already-
@@ -322,7 +335,7 @@ languages gets two fully isolated memories — every query filters by both
   and tested outside of a live Postgres instance; if the generated
   column's SQL expression ever changes, mirror the change there too.
   **Vocabulary, reading, writing, speaking, listening, and pronunciation
-  never get a score in Phase 4** — vocabulary is represented by real
+  never get a score in Phase 6** — vocabulary is represented by real
   counts (encountered/reviewing/mastered) instead of an invented
   percentage; the rest have no real evidence source yet from a text-only
   lesson and must show "Not assessed yet," never a fabricated or zero
@@ -390,12 +403,12 @@ languages gets two fully isolated memories — every query filters by both
   two truly concurrent ingestions for the same
   `(user, target_language_code)` on live Postgres — that requires a real
   database. See `0006_language_brain.sql`'s manual verification steps
-  (also in the Phase 4 delivery report) for the exact concurrent-ingestion
+  (also in the Phase 6 delivery report) for the exact concurrent-ingestion
   procedure to run once this migration is applied. RLS/grant/trigger
   guarantees on the new tables are likewise not provable by Vitest and are
   code-reviewed against the migration instead.
 
-### CEFR Assessment v2 (Phase 5)
+### CEFR Assessment v2
 
 **Confirmed level ≠ learning level.** A learner may already be studying
 B2 material while their formally confirmed HelloMova assessment level is
@@ -655,7 +668,7 @@ lessons can never, by itself, convert a confirmed B1 into a confirmed B2.
   `(assessment_id, item_id)` constraint and becomes fully immutable the
   instant its parent assessment leaves `in_progress`, via a trigger that
   reads the parent's live status on every update attempt.
-- **Security/write model** — same threat model as Phase 3/4: browser and
+- **Security/write model** — same threat model as Phase 5/6: browser and
   server share the same `authenticated` credential, so
   `authenticated`/`anon` get an explicit `revoke` (not just "no policy")
   on every write to every table in this migration. All writes go through
@@ -711,7 +724,413 @@ lessons can never, by itself, convert a confirmed B1 into a confirmed B2.
   project 0007 has already been applied to. It exercises privilege
   enforcement by actually impersonating an authenticated user via JWT
   claims, not just reading grant statements, and covers items 1–14 of the
-  Phase 5 hardening report's manual verification list.
+  CEFR Assessment v2 hardening report's manual verification list.
+
+### Learning Modes (Phase 7)
+
+**A thin, server-validated catalog layer over the existing AI Lesson
+Engine — not a second engine, and not an invented product catalog.**
+Before building this, the repo was audited for any existing mode
+definition: the only one that actually existed anywhere was `"general"`
+(`LessonModeSchema` in `src/lib/lessons/schemas.ts`; `lesson_sessions.mode`
+has no CHECK constraint specifically so future modes don't need a
+migration — see `0005_ai_lesson_engine.sql`). The dashboard's pre-Phase-7
+"Quick practice" row (`Talk with AI` / `Pronunciation` / `Role Play`, all
+statically labeled "Soon") was the only other hint of future modes in the
+repo, and it was itself dishonest — "Talk with AI" is literally the
+general mode, which already worked via the lesson card above it, yet was
+still marked "Soon." Per this phase's brief ("do not invent learning modes
+based on your own taste... if the exact catalog is not fully defined,
+implement only what is already grounded"), Phase 7 formalizes exactly
+`general` as the one engine-backed, startable mode. **No "business" or
+"career" mode was added**: James (Business English) and the "business"
+learning goal already exist as independent teacher/goal choices (see
+`teachers.ts`/`goals.ts`); those are full future product phases (9 and
+10), not Phase 7 plumbing.
+
+- **Two deliberately separate catalogs — not one catalog with a status
+  flag.** `src/lib/learningModes/constants.ts` holds `LEARNING_MODES`: a
+  typed, Zod-backed catalog of ENGINE-BACKED, actually startable modes
+  only (today: just `general`). `src/lib/learningModes/futureCapabilities.ts`
+  holds `FUTURE_LEARNING_CAPABILITIES`: honest, non-interactive dashboard
+  previews of real future product capabilities — today, exactly
+  `pronunciation` (Phase 8 — grounded by this file's own "do not
+  implement" list and by Mary's existing text-only pronunciation
+  disclaimer in `src/lib/lessons/prompt.ts`). The two are structurally
+  disjoint: a future-capability `key` is a plain string used only as a
+  React list key, is never a `LessonMode`, and is proven (by
+  `futureCapabilities.test.ts` and `constants.test.ts`) to always fail
+  `LearningModeIdSchema` — a preview can never become startable just by
+  being rendered. **`role_play` was removed, not relocated and not
+  replaced.** It existed only as an old, inert dashboard label with no
+  defined product scope or phase anywhere in the repo — one leftover UI
+  label is not evidence of a product decision. The product may define it
+  later, with a real decision behind it; until then neither catalog
+  mentions it.
+- **`LearningModeIdSchema` accepts only engine-backed, startable modes —
+  structurally, not by convention.** As originally built in Phase 7 this
+  was ALSO `startLessonAction`'s own write-gate, since `general` was the
+  only mode any engine supported. **Phase 8 split this in two** once a
+  second, differently-shaped engine (pronunciation) became real:
+  `LessonEngineModeIdSchema` is now the narrow, lesson-engine-only gate
+  `startLessonAction` actually uses (still in lockstep with
+  `LessonModeSchema`, the DB-write gate); `LearningModeIdSchema` is now
+  the broader "is this any real startable mode at all" check used for
+  dashboard/routing purposes, accepting `pronunciation` too — see the
+  "Pronunciation / Mary (Phase 8)" section below for why that split
+  matters for security. Neither catalog file contains any
+  prompt/system-instruction text, so both stay safe to import into Client
+  Components.
+- **Mode vs. teacher stay separate, because the existing product already
+  keeps them separate.** Audited before writing any code: a teacher
+  (Anna/James/Sofia/Alex/Mary) is chosen once at onboarding
+  (`profiles.selected_teacher_id`) and is never re-chosen per lesson or
+  per mode; a learning goal (general/travel/work/business/…) is a
+  similarly independent onboarding choice. Neither is "a mode," and Mary
+  being the pronunciation specialist does not make pronunciation
+  functionality live in Phase 7. Phase 7 does not introduce a
+  teacher-to-mode binding — a learning mode only ever selects a lesson
+  *intent*; the already-chosen teacher and goal still come entirely from
+  the profile, completely unchanged.
+- **Lesson engine integration, additive only.** `startLessonAction`
+  (`src/features/lessons/actions.ts`) now reads one new field,
+  `formData.get("mode")`, validates it with `LessonEngineModeIdSchema`
+  (rejecting any future-capability or unknown value with a safe error and
+  creating no session), and defaults to `"general"` when the field is
+  absent — so every pre-Phase-7 call site (the dashboard's original
+  "Start lesson" button) is unchanged. Nothing else is read from
+  `formData` for this purpose; teacher/CEFR/goal still come only from
+  `loadTrustedLessonContext()`'s profile read, exactly as before. Also
+  fixed in passing: `sendLessonMessageAction`'s continuation context had
+  `mode` hardcoded to `"general"` (harmless only because no other mode
+  existed yet) — it now reads `session.mode` from the session's own
+  immutable snapshot, the same trust boundary `teacher`/`cefrLevel`/
+  `learningGoal` already used, so a future mode's lessons stay internally
+  consistent turn-to-turn.
+- **Prompt extension point, inert today.** `src/lib/lessons/prompt.ts` adds
+  `MODE_INSTRUCTIONS: Partial<Record<LessonMode, string>>` — empty for
+  `"general"` — checked by `buildLessonSystemPrompt` and appended only if
+  present. A future mode's system-prompt behavior is added there, once it
+  is actually engine-backed — never in either catalog file.
+  `prompt.test.ts` asserts the general-mode prompt's section count is
+  unchanged by this hook's existence.
+- **No database migration.** `lesson_sessions.mode` and
+  `LessonModeSchema` already supported this without any schema change —
+  exactly the "preferred outcome" this phase's brief called for.
+- **Language Brain compatibility**: `ensureLessonIngested`/`ingest.ts`
+  never reads `lesson_sessions.mode` at all, so this phase has zero effect
+  on ingestion; verified by inspection, not just assumed.
+- **Dashboard UX**: `LearningModesSection`
+  (`src/features/dashboard/components/LearningModesSection.tsx`) replaces
+  the old static "Quick practice" tiles, reusing the same `canStartLesson`
+  state the hero lesson card already computes (no extra Supabase query).
+  It renders `LEARNING_MODES` as real, working tiles — `kind: "lesson"`
+  entries use `StartLessonButton`/"Continue lesson" exactly like before;
+  `kind: "pronunciation"` links to its own route (added Phase 8) — and
+  `FUTURE_LEARNING_CAPABILITIES` as plain non-interactive elements with a
+  text "Coming soon" badge and an `aria-label` stating why — never a
+  disabled fake button, never color-only meaning. As originally built in
+  Phase 7 this was one live tile (general) and one future tile
+  (pronunciation); see the Phase 8/9 sections below for how this grew to
+  three live tiles with no future tile today, and for the
+  `activeLessonSession` fix Phase 9 needed once a second `kind: "lesson"`
+  mode existed.
+- **Security**: client input is limited to one Zod-validated enum field
+  (as of Phase 9, `"general"` or `"business"` — see that phase's section);
+  it cannot select a teacher, inject prompt text, or reach any
+  future-capability, different-engine, or unknown mode. Every other trust
+  boundary from Phase 5 (service-role-only writes, server-derived
+  `user_id`, snapshot immutability trigger covering `mode`) is unchanged.
+- **Tests**: `src/lib/learningModes/constants.test.ts` (engine catalog
+  integrity, lookup, the `LearningModeIdSchema`/`LessonModeSchema`
+  lockstep check, explicit non-membership of `role_play` and
+  `pronunciation`), `src/lib/learningModes/futureCapabilities.test.ts`
+  (the preview catalog is honest and structurally disjoint from the
+  engine catalog), `src/lib/lessons/prompt.test.ts` (mode hook is a no-op
+  for `general`), and cases in `src/features/lessons/actions.test.ts`
+  covering `startLessonAction` for the first time (it had no test
+  coverage before this phase): valid/default mode starts a lesson, an
+  unknown mode is rejected, `pronunciation` is rejected, `role_play` is
+  rejected, a client cannot influence teacher/CEFR via extra form fields,
+  rate limiting still applies, and a continuation preserves
+  `session.mode` rather than a hardcoded default or client input.
+- **Adding a future mode safely**: once a capability is actually
+  engine-backed and ready to ship, add one `LearningModeDefinition` entry
+  to `LEARNING_MODES` — `LearningModeIdSchema` picks it up automatically.
+  If it needs its own system-prompt behavior, add that to
+  `MODE_INSTRUCTIONS` in `prompt.ts`, server-side only. Until then, a
+  genuinely-grounded future capability gets a `FutureLearningCapability`
+  preview entry instead (real reason, real planned phase — never a guess).
+  If a mode needs its own teacher/content rules, treat that as its own
+  scoped product decision (not a Phase 7 default) and get explicit
+  sign-off first, the same way the launch language list and goal list
+  already require sign-off.
+
+### Pronunciation / Mary (Phase 8)
+
+**A genuinely separate engine from the text Lesson Engine, not a bolt-on.**
+Audited before writing any code: this repo had ZERO audio/voice
+infrastructure before this phase — no `MediaRecorder` usage, no Supabase
+Storage usage anywhere, no speech-to-text, and `AiProvider`
+(`src/lib/ai/provider.ts`) only ever sent/received text. The OpenAI SDK
+(`openai@7.17.0`, already a dependency) does include an audio
+transcription resource, which this phase wires up for the first time.
+
+- **Mary binding — canonical product decision, not an open question.**
+  Mary IS the Pronunciation/Phonetics specialist. Pronunciation feedback
+  is always presented through Mary, REGARDLESS of the learner's
+  onboarding-selected teacher. This is a specialist-capability binding
+  scoped entirely to this one feature — it never reads or writes
+  `profiles.selected_teacher_id`, and it has no effect on which teacher
+  generates the General AI Lesson, a Business lesson, or any future
+  mode's turns; those keep using whichever teacher the learner actually
+  chose, completely unaffected. Presenting pronunciation feedback through
+  Mary no more changes the user's global teacher than a specialist
+  referral changes who your primary-care physician is.
+- **No audio is ever persisted.** The learner's recording is received by
+  `submitPronunciationAttemptAction`
+  (`src/features/pronunciation/actions.ts`), sent in-memory to the
+  transcription provider, and discarded — never written to Supabase
+  Storage or any other store. This was a deliberate scope decision, not
+  an oversight: no Storage bucket, policy, signed-URL, or retention
+  schedule existed anywhere in this repo to build on, and the brief's own
+  guidance ("if persistent raw audio is NOT needed after evaluation,
+  prefer not retaining it") directly supports this. The REAL evidence
+  that's actually needed downstream — the transcript and the structured
+  evaluation — is what gets persisted. **Unresolved**: if a future phase
+  needs the raw audio itself (e.g. for a human-reviewed appeals flow),
+  that requires a new, deliberate storage/retention design — not
+  something this phase backed into silently.
+- **Data model** (`supabase/migrations/0009_pronunciation.sql`): one flat
+  table, `pronunciation_attempts` — not a session+attempt split. There is
+  no genuine "session" concept (no session-level status or data beyond
+  what one attempt already owns), so this follows this repo's
+  `placement_test_attempts` precedent (one row per real attempt) instead
+  of inventing a grouping table with no real need. Same security model as
+  `lesson_sessions`/`lesson_messages` (0005): `authenticated`/`anon` get
+  an explicit `revoke` on insert/update (not just "no policy") — a plain
+  `auth.uid() = user_id` policy would let a browser insert a fabricated
+  "completed" attempt with an invented transcript/evaluation. All writes
+  go through `service_role`, used only in
+  `src/features/pronunciation/actions.ts`. A trigger
+  (`pronunciation_attempts_protect_lifecycle`) makes every row's snapshot
+  fields immutable and enforces a ONE-SHOT status machine
+  (`pending → completed` or `pending → failed`, then permanently frozen)
+  — even against `service_role`, same reasoning as the lesson engine's
+  snapshot trigger.
+- **Two-step flow, not a single request.** `startPronunciationAttemptAction`
+  generates a server-owned target phrase (via the existing text
+  `AiProvider`, same structured-JSON pattern as lesson turns — no
+  hand-authored phrase bank, since one would need authoring in 50
+  languages) and persists a `pending` row. The browser then records real
+  audio against that phrase and calls `submitPronunciationAttemptAction`
+  with the attempt id and the audio — nothing else. Neither action ever
+  reads a teacher, CEFR level, transcript, or score from client input;
+  both come entirely from the trusted profile / the attempt's own
+  immutable snapshot.
+- **Audio provider boundary** (`src/lib/ai/audioProvider.ts` /
+  `openaiAudioProvider.ts`): deliberately separate from `AiProvider` —
+  transcription evidence and pronunciation ANALYSIS are different
+  capabilities and are kept structurally distinct (see
+  `src/lib/pronunciation/evaluate.ts`, which calls both). Model is
+  `whisper-1`: a real speech-to-text model that produces a transcript,
+  nothing more.
+- **Evidence-honesty, enforced structurally, not just by prompt wording.**
+  Real recorded audio → whisper-1 transcription → a text LLM comparing the
+  transcript to the target phrase is a genuine, evidence-based
+  pronunciation-PRACTICE workflow — but it is NOT acoustic or
+  phoneme-level pronunciation SCORING, and the schema/prompt make that
+  distinction impossible to blur:
+  - `PronunciationModelOutputSchema` (`src/lib/pronunciation/schemas.ts`)
+    is the ONLY shape the model is asked to produce: `recognitionQuality`
+    (how well the ASR recognized the words — not a claim about how the
+    speech actually sounded, which is why it's named "recognition," not
+    "intelligibility"), `contentMatch` (did the recognized words match
+    the target), `differences` (concrete word-level gaps between target
+    and transcript — never acoustic), and `practiceSuggestion` (a
+    generic, actionable tip — never a claim about what was heard). There
+    is no numeric field anywhere in this shape — "92% accuracy" has no
+    field to be written into.
+  - `limitations` is NOT produced by the model at all. It is
+    `PRONUNCIATION_EVALUATION_LIMITATIONS`, a fixed, server-owned
+    constant that `evaluate.ts` appends to every persisted evaluation
+    unconditionally, alongside `recognizedTranscript` (the real
+    transcript, echoed in verbatim by server code, never by the model) —
+    both are structural parts of `PronunciationEvaluationSchema`, not
+    something the model could omit, water down, or spoof even if it tried.
+  - The evaluation system prompt (`EVALUATION_HONESTY_INSTRUCTIONS` in
+    `src/lib/pronunciation/prompt.ts`) lists forbidden claim types
+    explicitly and concretely — specific sounds/phonemes, stress,
+    intonation, vowels, rhythm, accent quality, numeric accuracy — rather
+    than a vague "be honest" request, and explicitly tells the model its
+    `limitations` field will be added afterward, not by it.
+  - `recognitionQuality` and `contentMatch` are kept as separate fields on
+    purpose — "clear but wrong phrase" and "hard to recognize but right
+    words" are different, genuinely distinguishable findings a transcript
+    comparison can prove.
+- **Input validation**
+  (`src/features/pronunciation/actions.ts`): authenticated owner (derived
+  from the server-verified session, never client input), a MIME allow-list
+  (normalized to the base type before checking, so
+  `audio/webm;codecs=opus` isn't wrongly rejected), a 10MB size cap
+  checked before any provider call, and a non-empty check. There is no
+  storage-key or path-traversal surface at all, by construction — see "no
+  audio is ever persisted" above. MIME **type** is the declared value on
+  the browser's `File` object, not independently verified via magic
+  bytes; a spoofed MIME on non-audio content simply fails honestly at the
+  transcription step (persisted as a real `'failed'` attempt) rather than
+  producing fabricated evidence — accepted as a reasonable Phase 8
+  boundary, not a silent gap.
+- **Idempotency & rate limiting**: a guarded
+  `UPDATE ... WHERE status = 'pending'` makes the terminal write
+  race-safe (Postgres serializes concurrent updates to the same row; the
+  loser affects zero rows and replays the winner's real result instead of
+  its own discarded computation) — no RPC/stored-procedure needed, unlike
+  CEFR v2, because there's no multi-table transaction here.
+  `checkPronunciationAttemptRateLimit`
+  (`src/lib/pronunciation/rateLimit.ts`) mirrors the lesson engine's
+  DB-backed COUNT approach:
+  `PRONUNCIATION_MAX_ATTEMPTS_PER_HOUR` (currently 15, exported as one
+  clearly-named, centralized, engineer-adjustable constant) is a
+  TECHNICAL SAFETY LIMIT only — explicitly NOT a Premium/Pro entitlement,
+  NOT Phase 13's subscription/voice-minute accounting system, and NOT a
+  pricing/business policy of any kind. Because a terminal attempt can
+  never be re-processed (one-shot trigger above), repeated submission
+  against the same attempt can never multiply provider calls either — the
+  rate limit and the one-shot lifecycle together bound total provider
+  cost per user per hour.
+- **CEFR**: `pronunciation_attempts.cefr_level` is a snapshot of the
+  learner's current learning level, read once at attempt creation, used
+  only to calibrate target-phrase difficulty. Nothing in this phase
+  writes `confirmed_cefr_level`, auto-promotes anything, or treats
+  pronunciation practice as proof of overall speaking skill.
+- **Language Brain**: `MEASURED_SKILLS` in
+  `src/lib/languageBrain/constants.ts` is still just `['grammar']` —
+  pronunciation is NOT wired into the Language Brain ingestion RPC in
+  this phase (that would mean a new SQL function and a new skill-state
+  write path — real, non-trivial scope of its own). `pronunciation_attempts`
+  is the real, persisted evidence, left cleanly available for a future
+  ingestion extension — not a fake integration built just to claim one
+  exists.
+- **Promotion into Learning Modes**: `pronunciation` moved from
+  `FUTURE_LEARNING_CAPABILITIES` (now empty) into the real,
+  engine-backed `LEARNING_MODES` catalog
+  (`src/lib/learningModes/constants.ts`) only once every piece above was
+  real — see that file's `LearningModeKind` (`"lesson" | "pronunciation"`)
+  and `LessonEngineModeIdSchema` (unchanged: still only accepts
+  lesson-engine modes, so pronunciation can never reach
+  `lesson_sessions.mode`) vs. the broader `LearningModeIdSchema` (accepts
+  any real startable mode, for dashboard/routing purposes only).
+- **UI/UX** (`src/features/pronunciation/components/PronunciationPractice.tsx`,
+  route `/dashboard/pronunciation`): real `MediaRecorder` capture with
+  browser feature-detection and MIME-candidate fallback (no hardcoded
+  single codec — Chrome/Firefox and Safari don't reliably agree on one),
+  explicit states for unsupported/permission-denied/recording/recorded/
+  submitting/result/failed, microphone tracks and object URLs released on
+  stop/unmount, a real native `<audio>` playback control (no fake
+  waveform, since no real waveform is computed), and a visible
+  non-color-only "recording" indicator honoring
+  `prefers-reduced-motion`.
+- **Tests**: `src/lib/pronunciation/generatePhrase.test.ts`,
+  `evaluate.test.ts` (real Zod validation against mocked provider
+  responses — malformed/missing-field/invented-field output is rejected
+  or stripped; a transcript mismatch produces honest `contentMatch`/
+  `differences` feedback with no sound-level wording; `recognizedTranscript`/
+  `limitations` are proven server-set even when the model's own JSON tries
+  to supply different values for them), `prompt.test.ts` (asserts the
+  evaluation system prompt explicitly forbids sound/stress/intonation/
+  vowel/rhythm/accent/numeric-accuracy claims, always presents Mary with
+  no teacher parameter to leak through, and never asks the model for a
+  `limitations` field), `src/features/pronunciation/actions.test.ts`
+  (ownership, MIME/size validation including the codec-parameter
+  normalization, idempotent replay on already-terminal and
+  concurrent-race outcomes, and that client-supplied transcript/
+  evaluation/score form fields are simply never read), plus the Learning
+  Modes catalog tests extended for the `kind`-based split.
+  **What Vitest cannot prove**: the lifecycle trigger's one-shot
+  enforcement and the RLS/grant revoke — code-reviewed against
+  `0009_pronunciation.sql` instead, same as every other migration in this
+  repo.
+
+### Business (Phase 9)
+
+**A second `kind: "lesson"` entry in the Learning Modes catalog — not a
+second AI Lesson Engine, and not "if mode === business, teacher = James."**
+
+- **Grounded scope, not an invented curriculum.** Before writing any
+  prompt text, the repo already had a `business` LEARNING GOAL
+  (`src/constants/goals.ts`) with its own existing description in
+  `src/lib/plan/generatePlan.ts`'s `GOAL_FOCUS`: "Professional vocabulary,
+  meetings, and formal writing" — distinct from the existing `work` goal
+  ("Everyday workplace communication and email phrases"). Business MODE's
+  system-prompt guidance (`MODE_INSTRUCTIONS.business` in
+  `src/lib/lessons/prompt.ts`) draws directly from that existing
+  description plus this phase's own brief's example categories (meetings,
+  professional email, presentations, negotiations, client/colleague
+  communication, workplace vocabulary) — offered to the model as topics to
+  draw from, not a mandatory rigid syllabus. No subtopic-selection UI was
+  built: subtopics are not defined anywhere in this repo, and inventing
+  tiles for undefined subtopics would be exactly the fake-feature pattern
+  this project avoids. Authored curriculum depth beyond this remains
+  future content work.
+- **No database migration.** `lesson_sessions.mode` already had no CHECK
+  constraint specifically so new modes wouldn't need one (see
+  `0005_ai_lesson_engine.sql`'s header). Only the Zod gate
+  (`LessonModeSchema` in `src/lib/lessons/schemas.ts`) grew, from
+  `z.enum(["general"])` to `z.enum(["general", "business"])` —
+  additive, no schema change.
+- **Teacher binding — left open, deliberately.** There is no existing
+  rule anywhere in this repo binding a learning goal OR a learning mode to
+  a specific teacher — teacher is, and remains, an independent,
+  onboarding-time, once-only choice
+  (`profiles.selected_teacher_id`). Business mode therefore uses
+  **Option A: the learner's own selected teacher, unchanged** — James is
+  NOT auto-assigned to Business lessons, and Business is NOT auto-assigned
+  to learners who picked James. This is the only option directly grounded
+  in existing, unmodified architecture; Options B ("suggest James") and C
+  ("always James") were considered and explicitly NOT implemented — flagged
+  here as an open product decision rather than silently chosen.
+- **Learning goal vs. learning mode stay two separate fields, able to
+  disagree.** A learner whose stored `learning_goal` is `"travel"` can
+  still start a `business`-mode lesson today (and vice versa) — the
+  lesson's system prompt weaves in BOTH independently (the existing
+  "favor examples relevant to your stated goal" line, unchanged, plus the
+  new Business mode section when `mode = "business"`). Neither field is
+  ever derived from or collapsed into the other.
+- **CEFR**: flows through the exact same `loadTrustedLessonContext()` used
+  by every mode — including the honest "unassessed" fallback — so Business
+  required zero new CEFR-handling code. Nothing in this phase sets
+  `confirmed_cefr_level`, invents a separate "Business CEFR," or promotes
+  anything from lesson completion.
+- **Language Brain**: a Business lesson is a normal `lesson_sessions` /
+  `lesson_messages` row, so `ensureLessonIngested` processes it through
+  the exact same, already-existing pipeline — no new table, no new
+  ingestion path, no code change needed here at all.
+  `lesson_sessions.mode = 'business'` is itself the provenance marker
+  (already a real, persisted column) for any future mode-aware analytics;
+  no migration was added solely for that speculative future use.
+- **Dashboard**: Business is one more `LEARNING_MODES` tile
+  (`LearningModesSection.tsx`), using the exact same
+  `StartLessonButton`/continue control as `general`. Fixed a real
+  pre-existing gap while wiring this in: the dashboard's "active lesson"
+  state previously carried only a session id, so with two `kind: "lesson"`
+  modes now live, a tile for the mode NOT actually in progress would have
+  incorrectly also offered "Continue lesson." `activeLessonSession` now
+  carries `{ id, mode }` (`src/app/(dashboard)/dashboard/page.tsx` →
+  `DashboardHome` → `LearningModesSection`) so only the tile matching the
+  active session's own mode shows Continue; the other lesson tile still
+  offers Start (a learner can already have more than one concurrently
+  `active` lesson_sessions row today — true before this phase too, not a
+  new behavior introduced here).
+- **Tests**: new `startLessonAction` cases for `business` (session created
+  with the right mode, teacher stays whatever the profile already had,
+  works independently of `learning_goal`), a continuation test proving
+  `session.mode = 'business'` is carried into the AI context exactly like
+  `general`, `prompt.test.ts` cases proving the Business instruction
+  section is additive-only (present for `business`, absent for `general`,
+  no persona/security change), and a `career` rejection test everywhere
+  `role_play`/`pronunciation` were already tested, guarding against Phase
+  10 scope ever leaking in here by accident.
 
 ## Stack
 

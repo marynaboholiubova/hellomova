@@ -1,9 +1,10 @@
 import * as z from "zod";
 
-/** Only lesson mode valid in Phase 3. No CHECK constraint mirrors this in
- * the DB (see 0005_ai_lesson_engine.sql) — this Zod enum is the live gate,
- * and it grows in later phases without a migration. */
-export const LessonModeSchema = z.enum(["general"]);
+/** Lesson modes valid as of Phase 9 (the AI lesson engine + Business).
+ * No CHECK constraint mirrors this in the DB (see 0005_ai_lesson_engine.sql)
+ * — this Zod enum is the live gate, and it grows in later phases without a
+ * migration, exactly as that migration's header comment anticipated. */
+export const LessonModeSchema = z.enum(["general", "business"]);
 export type LessonMode = z.infer<typeof LessonModeSchema>;
 
 export const LessonStatusSchema = z.enum(["active", "completed", "abandoned"]);

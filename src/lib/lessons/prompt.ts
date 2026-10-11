@@ -23,7 +23,7 @@ export interface LessonContext {
   objective: string | null;
   /** Bounded Language Brain summary for this session's target language —
    * null when there's no evidence yet (new learner, or a target language
-   * with no Language Brain data). Phase 4 personalization hook; see
+   * with no Language Brain data). Phase 6 personalization hook; see
    * PERSONALIZATION_INSTRUCTIONS below. */
   brainContext: LessonBrainContext | null;
 }
@@ -33,7 +33,7 @@ export interface LessonTurnRecord {
   content: string;
 }
 
-/** Server-owned context window — see Section 14 of the Phase 3 brief. */
+/** Server-owned context window — see Section 14 of the Phase 5 brief. */
 export const MAX_RECENT_TURNS = 12;
 
 const TEACHER_PERSONA_GUIDANCE: Record<string, string> = {
@@ -60,6 +60,34 @@ const CEFR_GUIDANCE: Record<CefrLevel, string> = {
 
 const UNASSESSED_GUIDANCE =
   "This learner's level has NOT been formally assessed yet — do not assume or state a CEFR level for them. Start at a cautious, beginner-safe pace (simple vocabulary, short sentences, generous scaffolding), and adjust gradually based on how they actually respond. Never claim they have a specific CEFR level.";
+
+/**
+ * Phase 7 extension point: a learning mode adds its own entry here to
+ * influence the system prompt. Deliberately empty for "general" so
+ * introducing the mode concept never changed that mode's behavior (see
+ * prompt.test.ts's "mode instruction hook" tests). Server-only, by
+ * design: never move this content into
+ * src/lib/learningModes/constants.ts, which is also imported by Client
+ * Components.
+ *
+ * `business` (Phase 9): grounded in the EXISTING `business` learning
+ * goal's own description (src/lib/plan/generatePlan.ts's GOAL_FOCUS:
+ * "Professional vocabulary, meetings, and formal writing") plus the
+ * Phase 9 brief's example categories — not an invented curriculum. This
+ * is guidance for the model to draw from, not a rigid syllabus: no
+ * specific subtopic is mandatory for every lesson. Business mode does
+ * NOT change which teacher is used — the learner's own onboarding-chosen
+ * teacher (Anna/James/Sofia/Alex/Mary) still generates every turn; see
+ * AGENTS.md's "Business (Phase 9)" section for why no teacher-auto-bind
+ * rule was added.
+ */
+const MODE_INSTRUCTIONS: Partial<Record<LessonMode, string>> = {
+  business: [
+    "This lesson's focus is BUSINESS / PROFESSIONAL communication, not general everyday conversation.",
+    "Favor topics like: meetings, professional email, presentations, negotiations, client/colleague communication, and workplace vocabulary — pick ONE or TWO naturally rather than cramming all of them in.",
+    "Keep the register professional but still encouraging and appropriate to the learner's level — a professional register does not mean harder vocabulary than the learner's level supports.",
+  ].join(" "),
+};
 
 const RESPONSE_FORMAT_INSTRUCTIONS = `You must respond with ONLY a single JSON object, no other text, matching exactly this shape:
 {
@@ -92,7 +120,7 @@ Specifically:
  * review / recurring-pattern reinforcement for roughly 20–30% of the
  * lesson, with the rest normal progression — not 100% of every lesson
  * about past mistakes. Returns null when there's no evidence yet, so a
- * new learner's prompt is unchanged from Phase 3.
+ * new learner's prompt is unchanged from Phase 5.
  */
 function buildPersonalizationInstructions(brainContext: LessonBrainContext | null): string | null {
   if (!brainContext) return null;
@@ -134,6 +162,7 @@ export function buildLessonSystemPrompt(context: LessonContext): string {
     : "This is the start of the lesson — establish a clear, simple objective for it.";
 
   const personalizationInstructions = buildPersonalizationInstructions(context.brainContext);
+  const modeInstructions = MODE_INSTRUCTIONS[context.mode];
 
   return [
     personaGuidance,
@@ -142,6 +171,7 @@ export function buildLessonSystemPrompt(context: LessonContext): string {
     levelGuidance,
     objectiveLine,
     "This is a text-only lesson: no audio, no speech recognition, no pronunciation scoring. Do not claim otherwise.",
+    ...(modeInstructions ? [modeInstructions] : []),
     ...(personalizationInstructions ? [personalizationInstructions] : []),
     SECURITY_INSTRUCTIONS,
     RESPONSE_FORMAT_INSTRUCTIONS,

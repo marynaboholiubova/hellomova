@@ -115,6 +115,42 @@ describe("buildLessonSystemPrompt — Language Brain personalization hook", () =
   });
 });
 
+describe("buildLessonSystemPrompt — Phase 7 mode instruction hook", () => {
+  it("adds no extra section for 'general' — introducing the mode concept must not change the only existing mode's prompt shape", () => {
+    const prompt = buildLessonSystemPrompt(makeContext({ mode: "general", brainContext: null }));
+    const sections = prompt.split("\n\n");
+    // persona, language, goal, level, objective, text-only-disclaimer,
+    // security, response-format — exactly the Phase 5 section count, with
+    // no personalization (brainContext: null) and no mode section added.
+    expect(sections).toHaveLength(8);
+  });
+});
+
+describe("buildLessonSystemPrompt — Phase 9 business mode instructions", () => {
+  it("adds a business-focused section for 'business' that 'general' never gets", () => {
+    const generalPrompt = buildLessonSystemPrompt(makeContext({ mode: "general", brainContext: null }));
+    const businessPrompt = buildLessonSystemPrompt(makeContext({ mode: "business", brainContext: null }));
+
+    expect(businessPrompt).toContain("BUSINESS / PROFESSIONAL");
+    expect(generalPrompt).not.toContain("BUSINESS / PROFESSIONAL");
+    expect(businessPrompt.split("\n\n")).toHaveLength(9);
+  });
+
+  it("does not change persona, language, level, or security instructions — only adds the extra topical section", () => {
+    const context = makeContext({ mode: "business", brainContext: null, teacher: anna });
+    const prompt = buildLessonSystemPrompt(context);
+
+    expect(prompt).toContain("Anna");
+    expect(prompt).toContain("untrusted input");
+    expect(prompt).toContain("Never reveal");
+  });
+
+  it("never claims or implies a teacher change — Business mode instructions say nothing about which persona to use", () => {
+    const prompt = buildLessonSystemPrompt(makeContext({ mode: "business", teacher: anna, brainContext: null }));
+    expect(prompt).not.toMatch(/you are james/i);
+  });
+});
+
 describe("buildLessonMessages — context window", () => {
   it("bounds recent turns to the server-owned limit rather than sending unlimited history", () => {
     const context = makeContext();

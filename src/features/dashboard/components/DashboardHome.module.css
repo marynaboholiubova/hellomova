@@ -53,35 +53,6 @@
   font-weight: 700;
 }
 
-.tileRow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-3);
-}
-
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-secondary);
-  font-weight: 600;
-  font-size: var(--font-size-sm);
-}
-
-.soonTag {
-  align-self: flex-start;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  background: var(--color-bg);
-  border-radius: var(--radius-full);
-  padding: 2px var(--space-2);
-}
-
 .mutedText {
   color: var(--color-text-secondary);
 }

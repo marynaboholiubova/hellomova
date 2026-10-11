@@ -239,6 +239,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      pronunciation_attempts: {
+        Row: {
+          id: string;
+          user_id: string;
+          target_language_code: string;
+          native_language_code: string;
+          cefr_level: string | null;
+          target_text: string;
+          prompt_version: string;
+          status: string;
+          transcript: string | null;
+          evaluation: unknown | null;
+          transcription_model: string | null;
+          evaluation_model: string | null;
+          error_reason: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          target_language_code: string;
+          native_language_code: string;
+          cefr_level?: string | null;
+          target_text: string;
+          prompt_version: string;
+          status?: string;
+        };
+        Update: {
+          status?: string;
+          transcript?: string | null;
+          evaluation?: unknown | null;
+          transcription_model?: string | null;
+          evaluation_model?: string | null;
+          error_reason?: string | null;
+          completed_at?: string | null;
+        };
+        Relationships: [];
+      };
       language_brain_profiles: {
         Row: {
           id: string;

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StartLessonButton } from "@/features/lessons/components/StartLessonButton";
+import { LearningModesSection } from "./LearningModesSection";
 import { ROUTES } from "@/constants/routes";
 import styles from "./DashboardHome.module.css";
 
@@ -32,6 +33,8 @@ export interface DashboardHomeProps {
   teacherName: string | null;
   canStartLesson: boolean;
   activeLessonSessionId: string | null;
+  /** Phase 9: mode-aware so the Learning Modes section can show "Continue" only on the tile whose mode actually matches the active session, never on every lesson-kind tile. */
+  activeLessonSession: { id: string; mode: string } | null;
   /** null when there's no target language selected yet — the Language
    * Brain section then just shows the same empty state as no evidence. */
   languageBrain: DashboardBrainSnapshot | null;
@@ -46,8 +49,6 @@ function formatLevelTag(levels: DashboardLevelSummary | null): string {
   }
   return "Not yet assessed";
 }
-
-const QUICK_PRACTICE_TILES = ["Talk with AI", "Pronunciation", "Role Play"];
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -71,6 +72,7 @@ export function DashboardHome({
   teacherName,
   canStartLesson,
   activeLessonSessionId,
+  activeLessonSession,
   languageBrain,
 }: DashboardHomeProps) {
   const friendlyName = getFriendlyName(displayName, email);
@@ -121,17 +123,7 @@ export function DashboardHome({
         )}
       </Card>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionHeading}>Quick practice</h2>
-        <div className={styles.tileRow}>
-          {QUICK_PRACTICE_TILES.map((tile) => (
-            <div key={tile} className={styles.tile}>
-              <span>{tile}</span>
-              <span className={styles.soonTag}>Soon</span>
-            </div>
-          ))}
-        </div>
-      </section>
+      <LearningModesSection canStartLesson={canStartLesson} activeLessonSession={activeLessonSession} />
 
       <section className={styles.section}>
         <div className={styles.sectionHeaderRow}>

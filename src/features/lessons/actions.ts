@@ -9,7 +9,9 @@ import {
   LearnerMessageSchema,
   LessonSessionIdSchema,
   ClientTurnIdSchema,
+  type LessonMode,
 } from "@/lib/lessons/schemas";
+import { LessonEngineModeIdSchema } from "@/lib/learningModes/constants";
 import { CefrLevelSchema } from "@/lib/onboarding/schemas";
 import { generateLessonTurn } from "@/lib/lessons/generateTurn";
 import { generateLessonSummary } from "@/lib/lessons/generateSummary";
@@ -34,7 +36,7 @@ const RATE_LIMIT_MESSAGE = "You're sending requests a bit fast — please wait a
  * catalog — never from client input. Returns an error string instead of
  * throwing so callers can surface it as a normal, safe form error.
  */
-async function loadTrustedLessonContext(): Promise<
+async function loadTrustedLessonContext(modeId: LessonMode): Promise<
   | { ok: true; context: LessonContext; targetLanguageCode: string; nativeLanguageCode: string; cefrLevel: string | null; learningGoal: string; teacherId: string }
   | { ok: false; error: string }
 > {
@@ -74,7 +76,7 @@ async function loadTrustedLessonContext(): Promise<
       cefrLevel,
       learningGoalLabel: goal.label,
       teacher,
-      mode: "general",
+      mode: modeId,
       objective: null,
       brainContext,
     },
@@ -88,10 +90,29 @@ async function loadTrustedLessonContext(): Promise<
 
 export async function startLessonAction(
   _state: LessonActionState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<LessonActionState> {
+  // Phase 7: the requested learning mode is the only new client-supplied
+  // input this action accepts. It is validated against
+  // LessonEngineModeIdSchema — the lesson engine's OWN subset of the
+  // Learning Modes catalog, never the full catalog — so a mode backed by
+  // a different engine entirely (e.g. "pronunciation", Phase 8 — see
+  // src/features/pronunciation/actions.ts) or any arbitrary string is
+  // rejected before any lesson_sessions row is created. Absent entirely
+  // (every pre-Phase-7 caller, and the existing hero "Start lesson"
+  // button) defaults to "general", so the original zero-field flow is
+  // unchanged. Nothing else about teacher/persona/prompt configuration is
+  // ever read from formData — that still comes entirely from the trusted
+  // profile read below, same as before Phase 7.
+  const rawMode = formData.get("mode");
+  const modeResult = LessonEngineModeIdSchema.safeParse(rawMode === null ? "general" : rawMode);
+  if (!modeResult.success) {
+    return { error: "That learning mode isn't available yet." };
+  }
+  const modeId = modeResult.data;
+
   const profile = await getOnboardingProfile();
-  const loaded = await loadTrustedLessonContext();
+  const loaded = await loadTrustedLessonContext(modeId);
 
   if (!loaded.ok) {
     return { error: loaded.error };
@@ -123,7 +144,7 @@ export async function startLessonAction(
       cefr_level: loaded.cefrLevel,
       learning_goal: loaded.learningGoal,
       teacher_id: loaded.teacherId,
-      mode: "general",
+      mode: modeId,
       prompt_version: PROMPT_VERSION,
     })
     .select("id")
@@ -246,8 +267,16 @@ export async function sendLessonMessageAction(
     cefrLevel: session.cefrLevel,
     learningGoalLabel: getGoalByCode(session.learningGoal)?.label ?? session.learningGoal,
     teacher,
-    mode: "general",
-    // Not threaded through from prior turns' metadata in Phase 3 — the
+    // Derived from THIS session's own trusted snapshot (set once, at
+    // creation, and immutable thereafter per lesson_sessions_protect_
+    // snapshot_trigger) — never hardcoded and never re-read from a live
+    // profile. Before Phase 7 this was hardcoded to "general", which
+    // happened to be harmless only because no other mode existed yet;
+    // fixed now so a future mode's lessons stay internally consistent
+    // across every turn, the same guarantee teacher/cefrLevel/
+    // learningGoal already have.
+    mode: session.mode as LessonMode,
+    // Not threaded through from prior turns' metadata in Phase 5 — the
     // bounded recent-turn window below already gives the model full
     // conversational continuity to infer the objective from, rather than
     // this codebase separately tracking and re-injecting it.

@@ -12,7 +12,7 @@ export type RecordReviewResultActionState = { error: string } | { success: true 
 /**
  * Server-side foundation for recording a spaced-repetition review result
  * (AGENTS.md Section 12) — not yet wired to an interactive Review Mode
- * screen (that UI doesn't exist yet; see AGENTS.md's Phase 4 scope
+ * screen (that UI doesn't exist yet; see AGENTS.md's Phase 6 scope
  * boundary), but fully real and tested: ownership-checked, and the new
  * stage/due date/mastery score are computed by trusted, deterministic
  * code (src/lib/languageBrain/spacedRepetition.ts), never trusted from

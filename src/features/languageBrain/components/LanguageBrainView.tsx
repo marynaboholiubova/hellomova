@@ -11,7 +11,7 @@ export interface LanguageBrainViewProps {
 }
 
 /** All skills this UI ever shows a row for — see AGENTS.md: only
- * 'grammar' can ever have a real score in Phase 4. Every other skill is
+ * 'grammar' can ever have a real score in Phase 6. Every other skill is
  * shown explicitly as "Not assessed yet," never hidden and never a
  * fabricated number. */
 const ALL_SKILLS = [

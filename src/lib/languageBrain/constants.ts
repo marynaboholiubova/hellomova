@@ -46,7 +46,7 @@ export const GRAMMAR_FAMILY_CATEGORIES: readonly ErrorCategory[] = [
   "word_order",
 ];
 
-/** The only skills Phase 4 ever writes a score for — see scoring.ts and
+/** The only skills Phase 6 ever writes a score for — see scoring.ts and
  * AGENTS.md for why vocabulary/reading/writing/speaking/listening/
  * pronunciation are represented differently (or stay unassessed). */
 export const MEASURED_SKILLS = ["grammar"] as const;
